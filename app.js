@@ -3,7 +3,7 @@
    Pri svakom objavljivanju: povećati APP_VERSION, isti broj upisati u version.json
    i u ?v= parametre u index.html. */
 
-var APP_VERSION = 9;
+var APP_VERSION = 10;
 var STORE_KEY = 'kartice.v1';
 
 /* ---------- pomoćne funkcije ---------- */
@@ -497,6 +497,7 @@ function render(keepScroll) {
       (/^(deck|cards|done|edit)$/.test(ui.screen) && !deck())) ui.screen = 'home';
   applyTheme();
   document.body.classList.toggle('has-fs', !!document.fullscreenEnabled);
+  document.body.classList.toggle('on-pdf', ui.screen === 'pdf');
   var cur = app.querySelector('.screen');
   var prevScroll = keepScroll && cur ? cur.scrollTop : 0;
   var html = VIEWS[ui.screen]();
@@ -533,6 +534,7 @@ function toast(msg, actionLabel, action) {
    o = { title, text, input: { value, placeholder }, buttons: [{ label, kind: 'danger'|'primary'|'cancel'|'current', onClick(value) }] }
    onClick koji vrati false ostavlja prozor otvoren. */
 function modal(o) {
+  o.buttons = o.buttons.filter(Boolean);
   var back = document.createElement('div');
   back.className = 'modal-back';
   var html = '<div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="mTitle">' +
@@ -915,6 +917,9 @@ async function mountPdf() {
     var vp = first.getViewport({ scale: 1 });
     if (x.pages !== pdfDoc.doc.numPages) { x.pages = pdfDoc.doc.numPages; save(); }
     buildBook(x, vp.width / vp.height);
+    // trake se same sklone posle par sekundi, kao u Apple Books
+    clearTimeout(pdfUiTimer);
+    pdfUiTimer = setTimeout(function () { if (ui.screen === 'pdf' && !document.querySelector('.modal-back')) togglePdfUi(false); }, 3000);
   } catch (e) {
     var w = document.getElementById('bookWrap');
     if (w) w.innerHTML = '<p class="empty-note">' + t('PDF nije mogao da se otvori. Proveri da li je fajl ispravan.') + '</p>';
@@ -949,12 +954,57 @@ function buildBook(x, ratio) {
     usePortrait: true, showCover: false, startPage: start,
     drawShadow: true, maxShadowOpacity: 0.4,
     flippingTime: data.settings.reduceMotion ? 250 : 750,
-    mobileScrollSupport: false, swipeDistance: 20, showPageCorners: true
+    mobileScrollSupport: false, swipeDistance: 20, showPageCorners: true,
+    disableFlipByClick: true   // dodir lista samo na uglu; ostale dodire obrađuje bindBookTaps
   });
   pf.loadFromHTML(els);
-  book = { pf: pf, els: els, rendered: {}, count: count, pageW: pageW, spread: spread, noteId: x.id, wrapW: W, wrapH: H, ratio: ratio };
+  book = { pf: pf, els: els, rendered: {}, count: count, pageW: pageW, spread: spread, noteId: x.id, wrapW: W, wrapH: H, ratio: ratio, state: 'read' };
+  var thisBook = book;
   pf.on('flip', function (e) { onPdfPage(e.data); });
+  pf.on('changeState', function (e) { thisBook.state = e.data; });
+  bindBookTaps(wrap);
   onPdfPage(start);
+}
+/* Dodir na strani: leva četvrtina lista nazad, desna napred, sredina pokazuje ili sakriva trake.
+   Prevlačenje (savijanje strane) i dodir na uglu obrađuje biblioteka. */
+function bindBookTaps(wrap) {
+  if (wrap.dataset.taps) return;
+  wrap.dataset.taps = '1';
+  var start = null;
+  wrap.addEventListener('pointerdown', function (e) { start = { x: e.clientX, y: e.clientY, t: Date.now() }; });
+  wrap.addEventListener('pointerup', function (e) {
+    if (!start) return;
+    var moved = Math.abs(e.clientX - start.x) + Math.abs(e.clientY - start.y), dt = Date.now() - start.t;
+    start = null;
+    if (moved > 12 || dt > 450) return;
+    var r = wrap.getBoundingClientRect(), rel = (e.clientX - r.left) / r.width;
+    // biblioteka obrađuje svoj deo posle nas; ako je ona počela da lista (ugao), ne radimo ništa
+    setTimeout(function () {
+      if (!book || book.state !== 'read') return;
+      if (rel < 0.25) pdfPrev();
+      else if (rel > 0.75) pdfNext();
+      else togglePdfUi();
+    }, 40);
+  });
+}
+/* StPageFlip-ov flipPrev() računa tačku kao da knjiga počinje na levoj ivici ekrana,
+   pa nazad ne lista u uspravnom položaju ni kad je knjiga centrirana. Zato tačku zadajemo sami. */
+function pdfPrev() {
+  if (!book) return;
+  var pf = book.pf, r = pf.getRender().getRect();
+  pf.flipController.flip({ x: r.left + 10, y: r.top + r.height - 2 });
+}
+function pdfNext() {
+  if (!book) return;
+  var pf = book.pf, r = pf.getRender().getRect();
+  pf.flipController.flip({ x: r.left + r.width - 10, y: r.top + r.height - 2 });
+}
+var pdfUiTimer = null;
+function togglePdfUi(show) {
+  var s = document.querySelector('.pdf-screen'); if (!s) return;
+  clearTimeout(pdfUiTimer);
+  var hide = show === undefined ? !s.classList.contains('ui-hidden') : !show;
+  s.classList.toggle('ui-hidden', hide);
 }
 function onPdfPage(idx) {
   var b = book; if (!b) return;
@@ -967,6 +1017,7 @@ function onPdfPage(idx) {
   Object.keys(b.rendered).forEach(function (k) {
     if (Math.abs(k - idx) > 8 && b.rendered[k] instanceof HTMLCanvasElement) {
       b.rendered[k].width = 0; b.rendered[k].remove(); delete b.rendered[k];
+      b.els[k].innerHTML = '<span class="pdf-page-no">' + (+k + 1) + '</span>';
     }
   });
 }
@@ -984,6 +1035,7 @@ async function renderPdfPage(i) {
     canvas.width = Math.floor(vp.width); canvas.height = Math.floor(vp.height);
     await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
     if (book !== b) return;
+    var no = b.els[i].querySelector('.pdf-page-no'); if (no) no.remove();
     b.els[i].appendChild(canvas);
     b.rendered[i] = canvas;
   } catch (e) { if (book === b) delete b.rendered[i]; }
@@ -1009,6 +1061,7 @@ function pdfMenu() {
             buttons: [{ label: t('Idi'), kind: 'primary', onClick: function (v) { var n = parseInt(v, 10); if (!n) return false; pdfGoTo(n); } }, { label: t('Otkaži'), kind: 'cancel' }] });
         }, 0);
       } },
+      document.fullscreenEnabled ? { label: document.fullscreenElement ? t('Izađi iz celog ekrana') : t('Ceo ekran'), kind: 'plain', onClick: function () { acts.fs(); } } : null,
       { label: t('Premesti u folder'), kind: 'plain', onClick: function () { setTimeout(moveNote, 0); } },
       { label: t('Preuzmi PDF'), kind: 'plain', onClick: function () { downloadNote(); } },
       { label: t('Obriši dokument'), kind: 'danger', onClick: function () { setTimeout(askDeleteNote, 0); } },
@@ -1185,8 +1238,8 @@ var acts = {
   moveNote: moveNote,
   delNote: askDeleteNote,
   downloadNote: downloadNote,
-  pdfPrev: function () { if (book) book.pf.flipPrev(); },
-  pdfNext: function () { if (book) book.pf.flipNext(); },
+  pdfPrev: pdfPrev,
+  pdfNext: pdfNext,
   pdfMenu: pdfMenu,
 
   // podešavanja
@@ -1279,8 +1332,8 @@ document.addEventListener('keydown', function (e) {
     else if (e.key === '2' && ui.flipped) mark(true);
     else if (e.key === 'Escape' && !document.fullscreenElement) acts.toDeck();
   } else if (ui.screen === 'pdf' && book) {
-    if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); book.pf.flipPrev(); }
-    else if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') { e.preventDefault(); book.pf.flipNext(); }
+    if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); pdfPrev(); }
+    else if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') { e.preventDefault(); pdfNext(); }
     else if (e.key === 'Escape' && !document.fullscreenElement) backFromNote();
   } else if (ui.screen === 'done' && e.key === 'Escape') acts.toDeck();
 });
