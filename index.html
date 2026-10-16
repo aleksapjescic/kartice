@@ -416,6 +416,9 @@ var BUILTIN_NOTES = [
   // { id: 'm-primer', title: 'Naslov', subject: 'Predmet', body: '# ...' }
 ];
 
+// Pri svakom objavljivanju povećati broj i isti upisati u version.json
+var APP_VERSION = 7;
+
 var STORE_KEY = 'kartice.v1';
 
 function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
@@ -512,7 +515,8 @@ function viewHome() {
     (notesTab ? viewNotesList()
       : '<div class="decks">' + list + (ui.manage ? '' : '<button class="deck add-deck btn" data-act="newDeck">+ Novi špil</button>') + '</div>') +
     '<div class="spacer"></div>' +
-    '<div class="field"><span class="label">Tema</span>' + seg('theme', [['auto', 'Sistem'], ['tamna', 'Tamna'], ['svetla', 'Svetla'], ['plava', 'Plava']], data.theme) + '</div>' +
+    '<div class="field"><div class="row-between"><span class="label">Tema</span><span class="label">Verzija ' + APP_VERSION + '</span></div>' +
+    seg('theme', [['auto', 'Sistem'], ['tamna', 'Tamna'], ['svetla', 'Svetla'], ['plava', 'Plava']], data.theme) + '</div>' +
     '</div>';
 }
 
@@ -752,6 +756,7 @@ function render(keepScroll) {
   if (keepScroll) app.querySelector('.screen').scrollTop = prevScroll;
   lastScreen = ui.screen;
   if (ui.screen === 'cards') lastTick = ui.tick;
+  if (typeof pendingUpdate !== 'undefined' && pendingUpdate) setTimeout(applyUpdate, 0);
 }
 
 function toast(msg, actionLabel, action) {
@@ -1060,6 +1065,30 @@ document.addEventListener('fullscreenchange', function () { ui.fs = !!document.f
    "default"): sa "black-translucent" iOS 26 pomera prikaz pod statusnu traku, ali ga
    ne produži do dna, pa ispod ostaje pojas na koji stranica ne može da crta. */
 if (navigator.standalone === true) document.body.classList.add('ios-app');
+
+/* Automatsko ažuriranje: iOS vraća aplikaciju iz pozadine bez ponovnog učitavanja,
+   pa pri svakom povratku proveravamo version.json i osvežavamo ako postoji novija verzija.
+   Ne osvežava se usred učenja ili pisanja beleške, nego kad se korisnik vrati na drugi ekran. */
+var pendingUpdate = false;
+function checkUpdate() {
+  if (!navigator.onLine) return;
+  fetch('version.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+    if (!j || !(j.v > APP_VERSION)) return;
+    try { if (sessionStorage.getItem('kartice.reloadedFor') === String(j.v)) return; sessionStorage.setItem('kartice.reloadedFor', String(j.v)); } catch (e) {}
+    pendingUpdate = true;
+    applyUpdate();
+  }).catch(function () {});
+}
+function applyUpdate() {
+  if (!pendingUpdate) return;
+  if (ui.screen === 'cards' || ui.screen === 'noteEdit' || ui.screen === 'edit') return;
+  clearTimeout(saveTimer);
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(data)); } catch (e) {}
+  location.reload();
+}
+document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') checkUpdate(); });
+window.addEventListener('pageshow', checkUpdate);
+setTimeout(checkUpdate, 1500);
 
 render();
 </script>
