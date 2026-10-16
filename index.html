@@ -127,13 +127,23 @@ h1 { margin: 0; font-size: 40px; line-height: 1.05; font-weight: 700; letter-spa
 /* početna: lista špilova */
 .decks { display: grid; gap: 10px; }
 .deck {
-  display: flex; flex-direction: column; gap: 10px; text-align: left; width: 100%;
+  display: flex; flex-direction: column; gap: 10px; text-align: left; width: 100%; box-sizing: border-box;
   padding: 18px 20px; border-radius: 20px; border: 1px solid var(--line); background: var(--card);
 }
 .deck:hover { border-color: var(--strong); }
 .deck-name { font-size: 19px; font-weight: 600; letter-spacing: -.2px; overflow-wrap: anywhere; }
 .deck-meta { font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .add-deck { border-style: dashed; color: var(--muted); font-weight: 500; }
+.deck.managed { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; }
+.deck.managed:hover { border-color: var(--line); }
+.deck.managed .deck-info { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.del-btn {
+  flex: none; height: 40px; padding: 0 14px; border-radius: 12px; font-size: 15px; font-weight: 600;
+  border: 1px solid color-mix(in srgb, var(--bad) 45%, var(--line)); background: transparent; color: var(--bad);
+}
+.del-btn:hover { background: color-mix(in srgb, var(--bad) 12%, transparent); }
+.head-row { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; }
+.head-row .link { flex: none; margin-bottom: -8px; }
 
 /* meni špila */
 .deck-menu { display: flex; flex-direction: column; gap: 24px; flex: 1 0 auto; justify-content: space-between; }
@@ -202,10 +212,12 @@ textarea.input { resize: none; line-height: 1.45; min-height: 48px; field-sizing
 .import p { margin: 0; font-size: 14px; line-height: 1.5; color: var(--muted); }
 .import code { font-size: 13px; background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 1px 5px; }
 .toast {
-  position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
+  position: fixed; left: 0; right: 0; margin-inline: auto; bottom: calc(24px + env(safe-area-inset-bottom, 0px));
   background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 12px; font-size: 14px;
-  z-index: 10; animation: fadeUp .25s ease-out; max-width: calc(100% - 40px);
+  z-index: 10; animation: fadeUp .25s ease-out; width: max-content; max-width: calc(100% - 40px); box-sizing: border-box;
+  display: flex; align-items: center; gap: 14px;
 }
+.toast button { flex: none; border: 0; background: transparent; color: var(--bg); font-size: 14px; font-weight: 700; padding: 6px 4px; text-decoration: underline; text-underline-offset: 3px; }
 
 /* desktop */
 @media (min-width: 900px) {
@@ -326,7 +338,7 @@ function save() {
 }
 
 // stanje sesije (ne čuva se)
-var ui = { screen: 'home', deckId: null, order: [], i: 0, flipped: false, dir: 'R', tick: 0, confirm: null, fs: false };
+var ui = { screen: 'home', deckId: null, order: [], i: 0, flipped: false, dir: 'R', tick: 0, confirm: null, manage: false, fs: false };
 var lastScreen = null, lastTick = -1, confirmTimer = null;
 
 function deck() { return data.decks.find(function (d) { return d.id === ui.deckId; }) || null; }
@@ -356,17 +368,24 @@ function bar(p, cls) {
 function viewHome() {
   var total = data.decks.reduce(function (s, d) { return s + d.cards.length; }, 0);
   var n = data.decks.length;
+  if (!n) ui.manage = false;
   var list = data.decks.map(function (d) {
     var p = pct(d);
+    var meta = '<span class="deck-meta">' + d.cards.length + ' ' + karticaWord(d.cards.length) + ' · ' + p + '% naučeno</span>';
+    if (ui.manage) {
+      return '<div class="deck managed"><div class="deck-info"><span class="deck-name">' + esc(d.name || 'Bez naziva') + '</span>' + meta + '</div>' +
+        '<button class="del-btn" data-act="delDeck" data-arg="' + d.id + '" aria-label="Obriši špil ' + esc(d.name || 'Bez naziva') + '">Obriši</button></div>';
+    }
     return '<button class="deck" data-act="open" data-arg="' + d.id + '">' +
-      '<span class="deck-name">' + esc(d.name || 'Bez naziva') + '</span>' +
-      '<span class="deck-meta">' + d.cards.length + ' ' + karticaWord(d.cards.length) + ' · ' + p + '% naučeno</span>' +
+      '<span class="deck-name">' + esc(d.name || 'Bez naziva') + '</span>' + meta +
       bar(p, 'thin') + '</button>';
   }).join('');
   return '<div class="screen home">' +
-    '<div class="head"><span class="eyebrow">Učenje kartica</span><h1>Kartice</h1>' +
-    '<span class="sub num">' + n + ' ' + plural(n, 'špil', 'špila', 'špilova') + ' · ' + total + ' ' + karticaWord(total) + '</span></div>' +
-    '<div class="decks">' + list + '<button class="deck add-deck btn" data-act="newDeck">+ Novi špil</button></div>' +
+    '<div class="head"><span class="eyebrow">Učenje kartica</span>' +
+    '<div class="head-row"><h1>Kartice</h1>' +
+    (n ? '<button class="link" data-act="manage">' + (ui.manage ? 'Gotovo' : 'Izmeni') + '</button>' : '') + '</div>' +
+    '<span class="sub num">' + (n ? n + ' ' + plural(n, 'špil', 'špila', 'špilova') + ' · ' + total + ' ' + karticaWord(total) : 'Nemaš nijedan špil. Napravi prvi.') + '</span></div>' +
+    '<div class="decks">' + list + (ui.manage ? '' : '<button class="deck add-deck btn" data-act="newDeck">+ Novi špil</button>') + '</div>' +
     '<div class="spacer"></div>' +
     '<div class="field"><span class="label">Tema</span>' + seg('theme', [['auto', 'Sistem'], ['tamna', 'Tamna'], ['svetla', 'Svetla']], data.theme) + '</div>' +
     '</div>';
@@ -392,7 +411,10 @@ function viewDeck() {
           '<button class="btn primary" data-act="startAll"' + (total ? '' : ' disabled') + '>Počni sve kartice</button>' +
           (kc > 0 && unk > 0 ? '<button class="btn" data-act="startUnknown">Samo nenaučene (' + unk + ')</button>' : '') +
           '<button class="btn" data-act="edit">' + (total ? 'Uredi kartice' : 'Dodaj kartice') + '</button>' +
-          (kc > 0 ? '<button class="link" data-act="reset">' + resetLabel + '</button>' : '') +
+          '<div style="display:flex;justify-content:center;flex-wrap:wrap;gap:4px 16px">' +
+            (kc > 0 ? '<button class="link" data-act="reset">' + resetLabel + '</button>' : '') +
+            '<button class="link danger" data-act="delDeck">Obriši špil</button>' +
+          '</div>' +
         '</div>' +
       '</div>' +
     '</div></div>';
@@ -454,7 +476,6 @@ function viewDone() {
 
 function viewEdit() {
   var d = deck();
-  var delLabel = ui.confirm === 'delDeck' ? 'Dodirni ponovo da obrišeš špil' : 'Obriši špil';
   var cards = d.cards.map(function (c, i) {
     return '<div class="ed-card" data-card="' + c.id + '">' +
       '<div class="ed-top"><span class="eyebrow">Pitanje ' + esc(cardNo(d, c)) + '</span>' +
@@ -478,7 +499,7 @@ function viewEdit() {
     '<div class="row-between"><span class="label">Kartice (' + d.cards.length + ')</span></div>' +
     '<div class="ed-list">' + cards + '</div>' +
     '<button class="btn add-deck" data-act="addCard">+ Nova kartica</button>' +
-    '<button class="link danger" data-act="delDeck">' + delLabel + '</button>' +
+    '<button class="link danger" data-act="delDeck">Obriši špil</button>' +
     '</div>';
 }
 
@@ -503,11 +524,29 @@ function render(keepScroll) {
   if (ui.screen === 'cards') lastTick = ui.tick;
 }
 
-function toast(msg) {
+function toast(msg, actionLabel, action) {
   var old = document.querySelector('.toast'); if (old) old.remove();
-  var t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status'); t.textContent = msg;
+  var t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status');
+  var span = document.createElement('span'); span.textContent = msg; t.appendChild(span);
+  if (actionLabel) {
+    var b = document.createElement('button'); b.type = 'button'; b.textContent = actionLabel;
+    b.addEventListener('click', function () { t.remove(); action(); });
+    t.appendChild(b);
+  }
   document.body.appendChild(t);
-  setTimeout(function () { t.remove(); }, 2200);
+  setTimeout(function () { t.remove(); }, actionLabel ? 6000 : 2200);
+}
+
+function deleteDeck(id) {
+  var idx = data.decks.findIndex(function (d) { return d.id === id; });
+  if (idx < 0) return;
+  var removed = data.decks.splice(idx, 1)[0];
+  save();
+  ui.screen = 'home'; ui.confirm = null; render(true);
+  toast('Špil „' + (removed.name || 'Bez naziva') + '“ je obrisan', 'Vrati', function () {
+    data.decks.splice(Math.min(idx, data.decks.length), 0, removed);
+    save(); if (ui.screen === 'home') render(true);
+  });
 }
 
 function askConfirm(key) {
@@ -561,8 +600,8 @@ function nextNo(d) {
 }
 
 var acts = {
-  home: function () { ui.screen = 'home'; ui.confirm = null; render(); },
-  open: function (id) { ui.deckId = id; ui.screen = 'deck'; ui.confirm = null; render(); },
+  home: function () { ui.screen = 'home'; ui.confirm = null; ui.manage = false; render(); },
+  open: function (id) { ui.deckId = id; ui.screen = 'deck'; ui.confirm = null; ui.manage = false; render(); },
   newDeck: function () {
     var d = { id: uid(), name: 'Novi špil', tag: '', cards: [], known: {} };
     data.decks.push(d); save();
@@ -597,11 +636,8 @@ var acts = {
     d.cards = d.cards.filter(function (c) { return c.id !== id; });
     delete d.known[id]; save(); render(true); toast('Kartica je obrisana');
   },
-  delDeck: function () {
-    if (!askConfirm('delDeck')) return;
-    data.decks = data.decks.filter(function (d) { return d.id !== ui.deckId; });
-    save(); ui.screen = 'home'; render(); toast('Špil je obrisan');
-  },
+  manage: function () { ui.manage = !ui.manage; render(true); },
+  delDeck: function (id) { deleteDeck(id || ui.deckId); },
   import: function () {
     var ta = document.getElementById('importText');
     var list = parseImport(ta.value);
