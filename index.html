@@ -1,0 +1,715 @@
+<!doctype html>
+<html lang="sr-Latn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kartice</title>
+<meta name="description" content="UÄenje sa karticama">
+<meta name="theme-color" content="#1C1B1A">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Kartice">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<style>html { -webkit-text-size-adjust: 100%; }</style>
+</head>
+<body><style>
+/* Layout: jedna centrirana kolona preko celog ekrana; na desktopu šire, meni špila u dve kolone */
+:root {
+  --bg: #1C1B1A; --card: #262524; --line: #383634; --strong: #55514B;
+  --ink: #E3DED6; --muted: #A39C92; --accent: #9A9183; --on-accent: #1C1B1A;
+  --good: #8C9C7D; --bad: #B98A78;
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", system-ui, "Segoe UI", sans-serif;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #EEEBE6; --card: #F7F5F2; --line: #DAD5CE; --strong: #B3ACA2;
+    --ink: #2A2826; --muted: #6A645C; --accent: #5F5850; --on-accent: #F7F5F2;
+    --good: #7E9070; --bad: #A0705E; color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #EEEBE6; --card: #F7F5F2; --line: #DAD5CE; --strong: #B3ACA2;
+  --ink: #2A2826; --muted: #6A645C; --accent: #5F5850; --on-accent: #F7F5F2;
+  --good: #7E9070; --bad: #A0705E; color-scheme: light;
+}
+/* izbor teme unutar aplikacije ima prednost */
+body.t-dark {
+  --bg: #1C1B1A; --card: #262524; --line: #383634; --strong: #55514B;
+  --ink: #E3DED6; --muted: #A39C92; --accent: #9A9183; --on-accent: #1C1B1A;
+  --good: #8C9C7D; --bad: #B98A78; color-scheme: dark;
+}
+body.t-light {
+  --bg: #EEEBE6; --card: #F7F5F2; --line: #DAD5CE; --strong: #B3ACA2;
+  --ink: #2A2826; --muted: #6A645C; --accent: #5F5850; --on-accent: #F7F5F2;
+  --good: #7E9070; --bad: #A0705E; color-scheme: light;
+}
+
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font);
+  overflow: hidden; transition: background-color .35s, color .35s;
+  -webkit-font-smoothing: antialiased;
+}
+button, input, textarea { font: inherit; color: inherit; }
+button {
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent; cursor: pointer;
+  transition: background-color .3s, color .3s, border-color .3s, opacity .15s, transform .15s;
+}
+button:active:not(:disabled) { transform: scale(.97); }
+button:disabled { opacity: .25; cursor: default; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+@keyframes inR { from { opacity: 0; transform: translateX(44px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes inL { from { opacity: 0; transform: translateX(-44px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes flipIn { from { opacity: 0; transform: perspective(900px) rotateY(-14deg) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes fadeUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+#app {
+  height: 100%; box-sizing: border-box; display: flex; justify-content: center;
+  padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: max(20px, env(safe-area-inset-left, 0px));
+  padding-right: max(20px, env(safe-area-inset-right, 0px));
+}
+.screen {
+  position: relative; width: 100%; max-width: 560px; height: 100%; box-sizing: border-box;
+  display: flex; flex-direction: column; gap: 20px; padding-block: 56px 32px;
+  overflow-y: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+}
+.screen::-webkit-scrollbar { display: none; }
+.screen.enter { animation: fadeUp .4s ease-out; }
+
+.fs {
+  position: fixed; z-index: 5;
+  top: calc(6px + env(safe-area-inset-top, 0px)); right: calc(12px + env(safe-area-inset-right, 0px));
+  width: 44px; height: 44px; display: grid; place-items: center;
+  border: 0; border-radius: 12px; background: transparent; color: var(--muted);
+}
+.fs:hover { color: var(--ink); }
+
+/* tipografija */
+.eyebrow { font-size: 13px; color: var(--muted); letter-spacing: .4px; text-transform: uppercase; }
+h1 { margin: 0; font-size: 40px; line-height: 1.05; font-weight: 700; letter-spacing: -1px; text-wrap: balance; overflow-wrap: anywhere; }
+.sub { font-size: 17px; color: var(--muted); }
+.label { font-size: 13px; color: var(--muted); }
+.head { display: flex; flex-direction: column; gap: 8px; padding-top: 24px; }
+.num { font-variant-numeric: tabular-nums; }
+
+/* površine */
+.panel { display: flex; flex-direction: column; gap: 10px; padding: 20px; border-radius: 20px; background: var(--card); border: 1px solid var(--line); }
+.row-between { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-variant-numeric: tabular-nums; }
+.bar { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; flex: none; }
+.bar > span { display: block; height: 100%; background: var(--good); border-radius: inherit; transition: width .5s ease; }
+.bar.thin { height: 6px; border-radius: 3px; }
+.bar.hair { height: 2px; border-radius: 1px; }
+.bar.hair > span { background: var(--accent); transition: width .35s ease; }
+
+.field { display: flex; flex-direction: column; gap: 8px; }
+.seg { display: grid; grid-template-columns: repeat(var(--n, 2), minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: 14px; background: var(--card); border: 1px solid var(--line); }
+.seg button { height: 40px; border-radius: 10px; border: 0; background: transparent; color: var(--muted); font-size: 15px; font-weight: 500; }
+.seg button[aria-pressed="true"] { background: var(--bg); color: var(--ink); }
+
+.stack { display: flex; flex-direction: column; gap: 10px; }
+.btn { height: 56px; border-radius: 16px; border: 1px solid var(--line); background: var(--card); color: var(--ink); font-size: 17px; font-weight: 600; padding: 0 16px; }
+.btn.primary { border-color: transparent; background: var(--accent); color: var(--on-accent); }
+.btn.small { height: 44px; font-size: 15px; border-radius: 12px; }
+.link { min-height: 44px; border: 0; background: transparent; color: var(--muted); font-size: 15px; padding: 0 8px; }
+.link:hover { color: var(--ink); }
+.link.danger { color: var(--bad); }
+.nav-back { min-height: 44px; display: inline-flex; align-items: center; gap: 2px; padding: 0 8px 0 0; border: 0; background: transparent; color: var(--ink); font-size: 17px; }
+.topbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.spacer { flex: 1 1 auto; }
+
+/* početna: lista špilova */
+.decks { display: grid; gap: 10px; }
+.deck {
+  display: flex; flex-direction: column; gap: 10px; text-align: left; width: 100%;
+  padding: 18px 20px; border-radius: 20px; border: 1px solid var(--line); background: var(--card);
+}
+.deck:hover { border-color: var(--strong); }
+.deck-name { font-size: 19px; font-weight: 600; letter-spacing: -.2px; overflow-wrap: anywhere; }
+.deck-meta { font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.add-deck { border-style: dashed; color: var(--muted); font-weight: 500; }
+
+/* meni špila */
+.deck-menu { display: flex; flex-direction: column; gap: 24px; flex: 1 0 auto; justify-content: space-between; }
+.deck-menu .col { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+
+/* učenje */
+.study { overflow: hidden; gap: 18px; max-width: 760px; }
+.study-top { display: flex; flex-direction: column; gap: 12px; }
+.known-row { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.known-row b { color: var(--ink); font-weight: 600; }
+.card-area { flex: 1 1 0; min-height: 0; display: flex; touch-action: pan-y; }
+.card {
+  flex: 1 1 0; min-height: 0; width: 100%; box-sizing: border-box; display: flex; flex-direction: column;
+  border-radius: 24px; background: var(--card); color: var(--ink); text-align: left;
+}
+.card.front { justify-content: space-between; gap: 16px; padding: 28px 24px; border: 1px solid var(--line); }
+.card.front:hover { border-color: var(--strong); }
+.card.back { gap: 14px; padding: 24px; border: 1px solid var(--strong); animation: flipIn .35s ease-out; }
+.card.in-R { animation: inR .35s cubic-bezier(.2,.8,.2,1); }
+.card.in-L { animation: inL .35s cubic-bezier(.2,.8,.2,1); }
+.card.dragging { transition: none; }
+.card.settle { transition: transform .25s ease; }
+.q-big { font-size: 26px; line-height: 1.25; font-weight: 600; letter-spacing: -.4px; overflow-wrap: anywhere; overflow-y: auto; min-height: 0; scrollbar-width: none; }
+.q-big::-webkit-scrollbar { display: none; }
+.q-small { display: flex; flex-direction: column; align-items: flex-start; width: 100%; gap: 6px; text-align: left; padding: 0; border: 0; background: transparent; color: var(--ink); }
+.q-small span:last-child { font-size: 16px; line-height: 1.3; font-weight: 600; overflow-wrap: anywhere; }
+.divider { height: 1px; background: var(--line); flex: none; }
+.answer-scroll { flex: 1 1 0; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.answer { display: flex; flex-direction: column; justify-content: flex-start; align-items: flex-start; width: 100%; min-height: 100%; box-sizing: border-box; text-align: left; padding: 0; border: 0; background: transparent; color: var(--ink); }
+.answer span { display: block; font-size: 16px; line-height: 1.55; white-space: pre-line; overflow-wrap: anywhere; max-width: 68ch; }
+.answer .empty { font-size: 15px; color: var(--muted); font-style: italic; }
+.hint { font-size: 13px; color: var(--muted); flex: none; }
+.actions { display: grid; gap: 10px; }
+.actions.front { grid-template-columns: 56px minmax(0, 1fr); }
+.actions.back { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.actions .icon { display: grid; place-items: center; padding: 0; }
+.keys { display: none; justify-content: center; gap: 18px; font-size: 12px; color: var(--muted); }
+kbd { font-family: inherit; font-size: 11px; padding: 2px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
+.touch-only { display: none; }
+@media (hover: none) and (pointer: coarse) { .touch-only { display: inline; } .mouse-only { display: none; } }
+
+/* kraj kruga */
+.done { justify-content: center; gap: 28px; }
+.big-pct { font-size: 64px; font-weight: 700; letter-spacing: -2px; font-variant-numeric: tabular-nums; line-height: 1; }
+
+/* uređivanje */
+.input {
+  width: 100%; box-sizing: border-box; border: 1px solid var(--line); background: var(--card); color: var(--ink);
+  border-radius: 14px; padding: 12px 14px; font-size: 17px;
+}
+.input:focus { outline: none; border-color: var(--strong); }
+textarea.input { resize: none; line-height: 1.45; min-height: 48px; field-sizing: content; }
+.name-input { font-size: 28px; font-weight: 700; letter-spacing: -.6px; padding: 10px 14px; }
+.ed-list { display: flex; flex-direction: column; gap: 12px; }
+.ed-card { display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: 18px; border: 1px solid var(--line); background: color-mix(in srgb, var(--card) 55%, var(--bg)); }
+.ed-card .input { font-size: 15px; background: var(--card); }
+.ed-card .ed-q { font-weight: 600; }
+.ed-top { display: flex; justify-content: space-between; align-items: center; }
+.ed-top .link { min-height: 32px; font-size: 14px; }
+.import { border-radius: 18px; border: 1px solid var(--line); padding: 4px 16px; }
+.import summary { cursor: pointer; padding: 12px 0; font-size: 15px; font-weight: 600; list-style: none; display: flex; justify-content: space-between; }
+.import summary::-webkit-details-marker { display: none; }
+.import summary::after { content: "+"; color: var(--muted); }
+.import[open] summary::after { content: "–"; }
+.import .body { display: flex; flex-direction: column; gap: 10px; padding-bottom: 16px; }
+.import p { margin: 0; font-size: 14px; line-height: 1.5; color: var(--muted); }
+.import code { font-size: 13px; background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 1px 5px; }
+.toast {
+  position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
+  background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 12px; font-size: 14px;
+  z-index: 10; animation: fadeUp .25s ease-out; max-width: calc(100% - 40px);
+}
+
+/* desktop */
+@media (min-width: 900px) {
+  .home { max-width: 880px; }
+  .decks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .deck-wide { max-width: 960px; }
+  .deck-menu { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 48px; align-items: end; align-content: center; padding-bottom: 48px; }
+  .deck-menu .head h1 { font-size: 56px; letter-spacing: -1.6px; }
+  .study { padding-block: 48px 28px; }
+  .card.front { padding: 40px 44px; }
+  .card.back { padding: 32px 40px; }
+  .q-big { font-size: 34px; letter-spacing: -.6px; }
+  .answer span { font-size: 18px; }
+  .q-small span:last-child { font-size: 18px; }
+  .keys { display: flex; }
+  .edit { max-width: 760px; }
+  .done { max-width: 640px; }
+}
+@media (max-height: 640px) and (max-width: 899px) {
+  .screen { padding-block: 48px 20px; }
+  .q-big { font-size: 22px; }
+}
+</style>
+
+<div id="app"></div>
+
+<script>
+var DEFAULT_CARDS = [
+["1", "Šta su računarske mreže ?", "Računarska mreža je sistem koji se sastoji od skupa međusobno povezanih hardverskih uređaja koji su povezani komunikacionom opremom korišćenjem komunikacionih kanala koji poseduju odgovarajući komunikacioni softver za povezivanje i prenos podataka između uređaja."],
+["2", "Koja je namena računarskih mreža ?", "Računari se u mrežu povezuju sa ciljem zajedničkog:\n• Komunikacije među korisnicima (elektrosnka pošta, društvene mreže,...)\n• korišćenja hardvera (štampača, skenera, skladišta podataka)\n• korišćenja i razmene podataka (dokumenata, muzike, filmova)\n• deljenje softvera (Office 365, Cloud servisi)"],
+["3", "Komponente računarske mreže su :", "U osnovne komponente spadaju:\n• Mrežni hardver (uređaji koji se koriste za povezivanje – modem, switch, router, hub)\n• Mrežni softver (sistemski i aplikativni softver)\n• Komunikacioni kanali (žični i bežični kanali)"],
+["4", "Interfejs potreban za povezivanje račinarskog sistema na mrežu :", "• Mrežna kartica (network adapter, network interface controller- NIC, ili Lan kartica, mrežna kartica). Na njoj se nalazi RJ45 priključak za priključenje mrežnog kabla (UTP kabl)\n• Bežična mrežna kartica (wireless network adapter; wireless network interface controller- WNIC< dolazi sa PCI, PCI-E ili USB priključkom.\n• Hub - dobijene poruke prosleđuje svim uređajima koji su na istoj mreži\n• Switch – dobijene poruke prosleđuje samo uređaju kome su namenjene\n• Access Point (povezuje bežične uređaje u mrežu; bežična pristupna tačka)\n• Ruter (koristi se za spajanje dve ili više različitih mreža: žične i bežične uređaje; razlikujemo ruter i wireless ruter; sadrži razl. Opcije za podešavanje"],
+["5", "Šta su komunikacioni kanali ?", "Predstavljaju fizički kanal koji se koristi za povezivanje dva uređaja."],
+["6", "Klasifikacija komunikacionih kanala", "Mogu se klasifikovati u dve grupe: kablovski i bežični."],
+["7", "Komunikacioni kanali razlikuju se po :", "Kominikacioni kanali (medijumi) se međusobno razlikuju po brzini prenosa podataka (protok) (bps, Kbps, Mbps, Gbps) i najvećoj udaljenosti koja može postojati između dva uređaja prilikom povezivanja i kašnjenju (latency) – vremenu koje je potrebno komponenti da se pripremi za pristup podacima."],
+["8", "Navesti tipove kablovskog medijuma", "A. Uporedne parica (twisted pair) su uparene izolovane bakarne žice\nB. UTP kablovi (unshielded twisted pair). Postoje različite kategorije: CAT3 (fiksna telefonija), CAT5 i CAT6 (lokalne mreže) 100 Mps i 1 Gbps (gigabitni eternet)\nC. Koaksijalni kabl (coaxial cable) Koristi se za prenos televizijskog i radio signala ali i kablovskog Interneta. Bakarna žica oko koje se nalazi izolator, mrežica od bakarnih i aluminijusmkih žica\nC. Optički kabl (optical fiber cable) (plastična ili staklena vlakna umotana u zaštitni sloj. Podaci se prenose svetlosnim talasima koje emituje laser dioda - Tbps)."],
+["9", "Navesti tipove bežičnog medijuma", "• Koriste se radio, mikrotalasi i infracrveni zraci.\n• Bluetooth – manje radaljine (10m) i brzine (3 Mps)\n• Bežične lokalne mreže (Wlan, WiFi) – desetine ili stotine metara. Neophodna pristupna tačka (access point). 10Mps-> 600Mps\n• Infrared (IR) jako mala ostojanja i jako mali protok.\nSatelitske veze – brzina oko 100Mps"],
+["10", "Šta je mrežni softver", "• Neophodan za funkcionisanje\n• Sastoji se od više slojeva od sistemskog do aplikativnog.\n• Slojevitost olakšava programiranje\n• Operativni sistem sadrži sve nivoe osim aplikativnog tako da autori aplikativnog sosftvera ne moraju da brinu o detaljima same komunikacije."],
+["11", "Nacrtaj primer jedne računarske mreže koja sadrži 4 radnih stanica,server, svič, mrežni printer kao i izlaz na internet preko rutera.(topologija zvezde)", ""],
+["12", "Računarske mreže možemo klasifikovati po :", "A. površini koju mreža pokriva (lokalna, globalna, mreže širokog raspona)\nB. Organizaciji računara u mreži (klijent-server, ravnopravne)\nC. način na koji se računari povezuju (Topologija) (zvezdasta, prstenasta, topologija magistrale, hibridna)\nD. način komunikacije računara u mreži (LOGIČKA ORGANIZACIJA)"],
+["13", "Navesti vrste računarskih mreža po površini koje ona pokriva.", "• Lokalna mreža (Local Area Network , LAN)\n• Mreža gradskog područja (Metropolitan Area Network , MAN)\n• Regionalna računarska mreža (Wide Area Network, WAN)"],
+["14", "Šta je Server ?", "Server je računar koji poseduje resurse i deli te resurse na mreži sa drugim računarima (print server, file server, application server, web server, ...)"],
+["15", "Šta je Klijent ?", "• Klijent je računar koji koristi resurse mreže"],
+["16", "Prema odnosu računara u mreži kakvi tipovi mrža postoje.", "• Postoje:\nA. KLIJENT SERVER MREŽE (client-server; postoji glavni računar sa resursima i klijenti koji te resurse koriste)\nB. RAVNOPRAVNE MREŽE (peer-to-peer networks; svi računari su klijenti tj. dele resurse)"],
+["17", "Čemu služi topologija ?", "Služi da predstavimo način na koji su računari i uređaji povezani u mrežu."],
+["18", "Navedi i nacrtaj osnovne vrste topologija kod malih mreža.", ""],
+["19", "Šta je Open system interconnection modela?", "• Koristi se da objasni kako podaci putuju od jednog računara do drugog bilo kada su povezani direktno ili kada konekciju ostvaruju putem drugih mrežnih uređaja"],
+["20", "Navesti sve slojeve Open system interconnection modela ?", "Aplikativni, Prezentacioni, Sesija, Transportni, Mrežni, Data link, Fizički"],
+["21", "Navesti sve slojeve TCP/IP modela kao i njegovu primenu.", "Aplikativni, transportni, mrežni (internet) sloj, vezni sloj (sloj mrežnog interfejsa), fizički sloj. Iternet je organizovan prema modelu TCP/IP ."],
+["22", "Aplikativni sloj ( opisati )", "Na ovom sloju komuniciraju aplikacije koje koriste mrežne usluge\nZa preuzimanje dokumenata sa veba: HTTP (HyperText TransferProtocol) i HTTPS (HyperText Transfer Protocol Secure)\nZa preuzimanje elektronske poste: POP3 (Post Office Protocol) i IMAP (Internet Message Access Protocol) a za slanje elektronske poste: SMTP (Simple Mail Transfer Protocol)\nZa prenos datoteka: FTP (File Transfer Protocol)"],
+["22", "Prezentacioni sloj ( opisati )", "prevođenje podataka (u obliku teksta i brojeva - ASCII kod) u mašinski razumljiv kod (EBCDIC kod)\nkompresiju (zbog bržeg prenosa podataka)\nenkripciju i dekripciju podataka koji se prenose u cilju zaštite"],
+["23", "Sloj sesije", "Osnovna funkcija je da uspostavi konekciju između dva uređaja koji komuniciraju korišćenjem sesija (sessions)\nZa komunikaciju se koriste razne tehnike koje uklučuju API-je (Application Programming Interfaces) (primer: netbios-mrežni i/o sistem)\nFunkcije koje sprovodi sloj sesije su autentifikaciju (identifikacija korisnika), autorizacija (pravo pristupa), i prosledjivanje odgovarajućih paketa aplikacijama koje iz zatevaju (session managment)"],
+["24", "Transportni sloj", "Osnovna uloga ovog sloja je:\nsegmentacija podataka\nkontrola toka podataka\nkontrola grešaka"],
+["25", "Segmentacija", "Jedan podatak se deli na niz segmenata od kojih svaki ima svoj redni broj ali i broj porta koji služi da se podataka usmeri određenoj aplikaciji"],
+["26", "Koje protokole koriste portovi :", "143: IMAP\n80 : HTTP\n20: FTP\n25: SMTP\n21: FTP\n443: HTTPS\n110: POP3"],
+["27", "Kontrola toka podataka", "Povećava i smanjuje brzinu protoka segmenata u zavisnosti od brzine protoka podataka kroz neki link ili neki mrežni uređaj ili karticu kako nebi došlo do gubljenja podataka (sudara)"],
+["28", "Transportni sloj - Protokoli", "• TCP (Transmission Control Protocol)\n• UDP (User Datagram Protocol)"],
+["29", "Karakteristike TCP (Transmission Control Protocol) protokola", "pouzdaniji za prenos veb strana, datoteka, elektronske pošte\nza svaki pristigli paket šalje se potvrda\npored portova u segment se dodaju informacije na osnovu kojih se poruka može sklopiti u celinu\nkontroliše se i brzina toka podataka (flow control)"],
+["30", "Karakteristike UDP (User Datagram Protocol)", "brži, za aplikacije u realnom vremenu (youtube, media stream, igrice)\nne uspostavlja se konekcija, ne potvrđuje se prijem paketa, ne šalju se ponovo paketi"],
+["31", "Mrežni sloj", "Mrežni sloj je zadužen za prenos paketa između različitih delova mreže\nNjegove osnovne funkcije su:\nLogičko adresiranje svakom segmentu se dodeljuje (IP v4 ili v6 adrese) polaznog i kranjeg računara\nOdređivanje putanje – određivanje najoptimalnije putanje kroz mrežu\nRutiranje – postupak prosleđivanja paketa od polaznog do krajnjeg računara. Paketu koji sadrži IP adrese računara pridružujemo i masku mreže. Maska mreže je nalik IP adresi: 255.255.255.0 (jedan primer)"],
+["32", "Šta je IPV4", "Pv4 adrese su 32-bitni brojevi\nUobicajeno se predstavljaju kao četiri dekadna broja izme.u 0 i 255\nUkupno 232 adresa (oko 4,2 milijarde)\nUređaju priključenom na mrežu dodeljuje se IP adresa ili statički (adresa je fiksna kad god se priključi na mrežu) ili dinamički { dodeljuje se neka slobodna IP adresa, nema garancija da će uvek biti ista\nStatičke adrese pogodnije su za servere dok su dinamičke namanjene klijentskim računarima (smanjuju mogućnost greške, omogućavaju jednostavnije administriranje mreže)"],
+["33", "Šta je IPV6", "IPv6 adrese: 128-bitne (npr. FE80:0000:0000:0000:0202:B3FF:FE1E:8329)\nBudućnost Iterneta će se bazirati na IPv6 adesama kako raste broj uređaja koji zahtevaju stalnu konekciju sa Internetom"],
+["34", "Šta je dinamička adresa", "Zasniva se na DHCP protokolu (Dynamic Host Conguration Protocol)\nJedan ili vise uređaja u mrezi igraju ulogu DHCP servera\nUređaj pri povezivanju u lokalnu mrezu šalje DHCP serveru zahtev da se dodeli IP adresa i on salje neku slobodnu adresu"],
+["35", "Data Link sloj", "Paketi sa mrežnog nivoa se predaju nivou mrežnog interfejsa (data link layer)\nNa sloju mrežnog interfejsa neophodno je dodati prave fizičke adrese uređaja koji komuniciraju (MAC adrese mrežnih kartica).\nSvaka kartica, mrežni uređaj poseduje jedinistvenu adresu koju joj dodeljuje\nNa ovom nivou kreiramo takozvane frejmove"],
+["36", "Šta je MAC", "Predstavljaju se pomocu 48 bita\nZapisuju se u obliku 6 dvocifrenih heksadekadnih brojeva , .,\n(primer:2c:d4:44:a8:be:3b)"],
+["37", "Osnovne funkcije Data Link sloja", "Osnovne funkcije ovog sloja su:\nFraming – formiranje (kapsulacija i dekapsulacija podataka; dodaju se informacije neophodne za prenos podataka na ovom sloju)\nMedia Access Control (tehnika koja se koristi za slanje i primanje podataka preko kanala)\nError detection (tehnika koja se koristi za detekciju grešaka prilikom slanja – koalizija između frame-ova)"],
+["38", "Fizički sloj", "Fizički sloj podatke koji su obrađeni u toku postupka slanja u višim slojevima prevodi u odgovarajuće signale\nSignal koji je generisan preko fizičkog sloja zavisi od tipa medijuma koji se koristi (električni signal kod UTP kablova, pulsirajuća svetlost kod optičkih,...)"],
+["40", "Strukturni opis Interneta", "WAN mreža koja povezuje mnoštvo manjih privatnih ili javnih mreža i koja omogućava međusobnu komunikaciju povezanim uređajima bez obzira na način povezivanja telefonskim linijama, mrežnim kablom, koaksijalnim kablom, satelitskim vezama ili bežično.\nOna poseduje hijerarhijsku strukturu: hostovi – mreže dobavljača – regionalne mreže – nacionalne mreže – internacionalne mreže"],
+["41", "Funkcionalni opis", "Globalna mrežna struktura koja omogućava rad distribuiranim aplikacijama koje upotrebljavaju korisnici:\nweb (pregled hipertekstualnih dokumenata)\nelektronska pošta\nprenos datoteka između računara\nprijaljivanje na udaljene računare\nslanje instant poruka …"],
+["42", "Nastanak i preteča Interneta. Arpanet", "Nastaje u SAD u doba hladnog rata\nTvorac je agencija ARPA u saradnji sa Ministarstvom odbrane\nIdeja: Pravljenje računarske mreže koja bi omogućila komunikaciju vojnih laboratorija, vladinih biroa i univerziteta na kojima su se radili vojni projekti.\nU osnovi je ravnopravna mreža (peer to peer), sa višestrukim vezama koje su se u slučaju kvara automatski preusmeravale alternativnim putevima."],
+["43", "Šta je provajder", "Kućni i poslovni računari povezuju se na Internet koriscenjem usluga dobavljaca interneta, tj. internet provajdera (internet service providers, ISP)\nProvajderi omogućavaju uključivanje računara i manjih mreža u njihove mreže koje su već povezane sa Internetom\nDanas se uređaji povezuju na Internet korišćenjem širokopojasnog pristupa (broadband internet access)"],
+["44", "Načini povezivanja", "ADSL pristup preko telefonskih linija\npristup preko linija kablovske televizije (kablovski Internet)\npristup preko mreže mobilne telefonije (mobilni Internet)\npristup preko optičkih kablova (optički Internet)\nPristup preko satelitskih ili bežičnih mreža"],
+["45", "Šta je ADSL", "Digitalna pretplatna linija (digital subscriber line, DSL) je tehnologija za istovremeni prenos glasovnog signala i digitalnih podataka preko parica fiksne telefonske mreže"],
+["46", "Šta je Kablovski internet", "Optičko-kablovske mreze (hybrid bre-coaxial) zasnivaju se na kombinovanom prenosu podataka kroz optička vlakna i koaksijalne kablove koji se koriste za istovremen prenos TV signala, radio-signala i digitalnih podataka"],
+["47", "Klasifikacija Internet servisa", "Sve Internet servise možemo klasifikovati u bazične (elektronska pošta, komunikacija između udaljenih računara, prenos podataka između udaljenih računara), javni informacioni servisi, diskusione grupe, konferencijski servisi i servisi za pretraživanje Interneta"],
+["48", "Šta je Veb", "Web nije isto što i internet\nWeb je sistem međusobno povezanih dokumenata (veb stranica koje sadrže tekst, slike, video-snimke i sl.)\nZa povezivanje veb-stranica koriste se veze ili linkovi"],
+["49", "Tipovi Veb stranica", "statičke veb-stranice, dinamičke stranice,aktivne stranice"],
+["50", "Šta je HTTP ?", "HTTP je protokol koji se najčešće koristi za prenos podataka na vebu"],
+["51", "Navesti HTTP metode", "GET: preuzimanje resursa sa date lokacije\nHEAD: isto kao GET, samo zahteva slanje samo zaglavlja, bez tela poruke\nPOST: slanje podataka serveru\nPUT: postavljanje resursa na datu lokaciju\nDELETE: brisanje resursa sa date lokacije"],
+["52", "Servis CHAT", "• Omogućava slanje instant poruka, razmenu poruka uživo"]
+];
+
+var STORE_KEY = 'kartice.v1';
+
+function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
+function shuffled(a) { a = a.slice(); for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
+function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function plural(n, one, few, many) {
+  var m10 = n % 10, m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return one;
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
+  return many;
+}
+function karticaWord(n) { return plural(n, 'kartica', 'kartice', 'kartica'); }
+
+function defaultDeck() {
+  return {
+    id: 'mreze', name: 'Računarske mreže', tag: 'Pitanja za test', known: {},
+    cards: DEFAULT_CARDS.map(function (c, i) { return { id: 'c' + i, n: c[0], q: c[1], a: c[2] }; })
+  };
+}
+
+function load() {
+  try {
+    var raw = localStorage.getItem(STORE_KEY);
+    if (raw) {
+      var d = JSON.parse(raw);
+      if (d && Array.isArray(d.decks)) return d;
+    }
+  } catch (e) {}
+  return { decks: [defaultDeck()], theme: 'auto', random: false };
+}
+var data = load();
+var saveTimer = null;
+function save() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(function () { try { localStorage.setItem(STORE_KEY, JSON.stringify(data)); } catch (e) {} }, 150);
+}
+
+// stanje sesije (ne čuva se)
+var ui = { screen: 'home', deckId: null, order: [], i: 0, flipped: false, dir: 'R', tick: 0, confirm: null, fs: false };
+var lastScreen = null, lastTick = -1, confirmTimer = null;
+
+function deck() { return data.decks.find(function (d) { return d.id === ui.deckId; }) || null; }
+function cardById(d, id) { return d.cards.find(function (c) { return c.id === id; }); }
+function knownCount(d) { return d.cards.filter(function (c) { return d.known[c.id]; }).length; }
+function unknownIds(d) { return d.cards.filter(function (c) { return !d.known[c.id]; }).map(function (c) { return c.id; }); }
+function pct(d) { return d.cards.length ? Math.round(knownCount(d) / d.cards.length * 100) : 0; }
+function cardNo(d, c) { return c.n || String(d.cards.indexOf(c) + 1); }
+
+var ICON = {
+  back: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>',
+  prev: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>',
+  fsOn: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>',
+  fsOff: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>'
+};
+
+function seg(name, opts, current) {
+  return '<div class="seg" style="--n:' + opts.length + '">' + opts.map(function (o) {
+    return '<button data-act="' + name + '" data-arg="' + o[0] + '" aria-pressed="' + (o[0] === current) + '">' + o[1] + '</button>';
+  }).join('') + '</div>';
+}
+function bar(p, cls) {
+  return '<div class="bar ' + (cls || '') + '" role="progressbar" aria-label="Naučena pitanja" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + Math.round(p) + '"><span style="width:' + p + '%"></span></div>';
+}
+
+/* ---------- ekrani ---------- */
+function viewHome() {
+  var total = data.decks.reduce(function (s, d) { return s + d.cards.length; }, 0);
+  var n = data.decks.length;
+  var list = data.decks.map(function (d) {
+    var p = pct(d);
+    return '<button class="deck" data-act="open" data-arg="' + d.id + '">' +
+      '<span class="deck-name">' + esc(d.name || 'Bez naziva') + '</span>' +
+      '<span class="deck-meta">' + d.cards.length + ' ' + karticaWord(d.cards.length) + ' · ' + p + '% naučeno</span>' +
+      bar(p, 'thin') + '</button>';
+  }).join('');
+  return '<div class="screen home">' +
+    '<div class="head"><span class="eyebrow">Učenje kartica</span><h1>Kartice</h1>' +
+    '<span class="sub num">' + n + ' ' + plural(n, 'špil', 'špila', 'špilova') + ' · ' + total + ' ' + karticaWord(total) + '</span></div>' +
+    '<div class="decks">' + list + '<button class="deck add-deck btn" data-act="newDeck">+ Novi špil</button></div>' +
+    '<div class="spacer"></div>' +
+    '<div class="field"><span class="label">Tema</span>' + seg('theme', [['auto', 'Sistem'], ['tamna', 'Tamna'], ['svetla', 'Svetla']], data.theme) + '</div>' +
+    '</div>';
+}
+
+function viewDeck() {
+  var d = deck();
+  var kc = knownCount(d), total = d.cards.length, unk = total - kc, p = pct(d);
+  var resetLabel = ui.confirm === 'reset' ? 'Dodirni ponovo za reset' : 'Resetuj napredak';
+  return '<div class="screen deck-wide">' +
+    '<div class="topbar"><button class="nav-back" data-act="home">' + ICON.back + 'Špilovi</button></div>' +
+    '<div class="deck-menu">' +
+      '<div class="col">' +
+        '<div class="head" style="padding-top:0"><span class="eyebrow">' + esc(d.tag || 'Špil') + '</span><h1>' + esc(d.name || 'Bez naziva') + '</h1>' +
+        '<span class="sub num">' + total + ' ' + karticaWord(total) + '</span></div>' +
+        '<div class="panel"><div class="row-between"><span style="font-size:15px;color:var(--muted)">Naučeno</span>' +
+        '<span style="font-size:15px"><b style="font-weight:600">' + p + '%</b><span style="color:var(--muted)"> · ' + kc + ' / ' + total + '</span></span></div>' + bar(p) + '</div>' +
+      '</div>' +
+      '<div class="col">' +
+        '<div class="field"><span class="label">Redosled</span>' + seg('order', [['seq', 'Po redu'], ['rnd', 'Nasumično']], data.random ? 'rnd' : 'seq') + '</div>' +
+        '<div class="stack">' +
+          (total === 0 ? '<p class="sub" style="margin:0;font-size:15px">Špil je prazan. Dodaj prve kartice.</p>' : '') +
+          '<button class="btn primary" data-act="startAll"' + (total ? '' : ' disabled') + '>Počni sve kartice</button>' +
+          (kc > 0 && unk > 0 ? '<button class="btn" data-act="startUnknown">Samo nenaučene (' + unk + ')</button>' : '') +
+          '<button class="btn" data-act="edit">' + (total ? 'Uredi kartice' : 'Dodaj kartice') + '</button>' +
+          (kc > 0 ? '<button class="link" data-act="reset">' + resetLabel + '</button>' : '') +
+        '</div>' +
+      '</div>' +
+    '</div></div>';
+}
+
+function viewStudy() {
+  var d = deck();
+  var c = cardById(d, ui.order[ui.i]);
+  var no = cardNo(d, c);
+  var kc = knownCount(d), total = d.cards.length, p = pct(d);
+  var anim = ui.tick !== lastTick ? ' in-' + ui.dir : '';
+  var top = '<div class="study-top">' +
+    '<div class="topbar"><button class="nav-back" data-act="toDeck">' + ICON.back + 'Meni</button>' +
+    '<span class="num" style="font-size:15px;color:var(--muted)">' + (ui.i + 1) + ' / ' + ui.order.length + '</span></div>' +
+    '<div class="bar hair"><span style="width:' + (ui.i / ui.order.length * 100) + '%"></span></div>' +
+    '<div style="display:flex;flex-direction:column;gap:6px"><div class="known-row"><span>Naučeno</span><span><b>' + p + '%</b> · ' + kc + ' / ' + total + '</span></div>' + bar(p, 'thin') + '</div>' +
+    '</div>';
+  var body, actions, keys;
+  if (!ui.flipped) {
+    body = '<button class="card front' + anim + '" data-act="flip" aria-label="Okreni karticu">' +
+      '<span class="eyebrow">Pitanje ' + esc(no) + '</span>' +
+      '<span class="q-big">' + esc(c.q) + '</span>' +
+      '<span class="hint"><span class="touch-only">Dodirni za odgovor</span><span class="mouse-only">Klikni za odgovor</span></span></button>';
+    actions = '<div class="actions front">' +
+      '<button class="btn icon" data-act="prev" aria-label="Prethodna kartica"' + (ui.i === 0 ? ' disabled' : '') + '>' + ICON.prev + '</button>' +
+      '<button class="btn primary" data-act="flip">Prikaži odgovor</button></div>';
+    keys = '<div class="keys"><span><kbd>Razmak</kbd> okreni</span><span><kbd>←</kbd> prethodna</span><span><kbd>Esc</kbd> meni</span></div>';
+  } else {
+    var ans = c.a && c.a.trim()
+      ? '<span>' + esc(c.a) + '</span>'
+      : '<span class="empty">Za ovo pitanje nema tekstualnog odgovora (zadatak je crtež).</span>';
+    body = '<div class="card back">' +
+      '<button class="q-small" data-act="flip"><span class="eyebrow">Pitanje ' + esc(no) + '</span><span>' + esc(c.q) + '</span></button>' +
+      '<div class="divider"></div>' +
+      '<div class="answer-scroll"><button class="answer" data-act="flip" aria-label="Vrati na pitanje">' + ans + '</button></div>' +
+      '<span class="hint"><span class="touch-only">Prevuci desno ako znaš, levo ako ne znaš</span><span class="mouse-only">Klikni karticu za pitanje</span></span></div>';
+    actions = '<div class="actions back">' +
+      '<button class="btn" data-act="no">Ne znam</button>' +
+      '<button class="btn primary" data-act="yes">Znam</button></div>';
+    keys = '<div class="keys"><span><kbd>1</kbd> ili <kbd>←</kbd> ne znam</span><span><kbd>2</kbd> ili <kbd>→</kbd> znam</span><span><kbd>Razmak</kbd> pitanje</span></div>';
+  }
+  return '<div class="screen study">' + top + '<div class="card-area" id="cardArea">' + body + '</div>' + actions + keys + '</div>';
+}
+
+function viewDone() {
+  var d = deck();
+  var kc = knownCount(d), total = d.cards.length, unk = total - kc, p = pct(d);
+  return '<div class="screen done">' +
+    '<div style="display:flex;flex-direction:column;gap:8px">' +
+      '<span class="eyebrow">Krug završen</span><span class="big-pct">' + p + '%</span>' +
+      '<span class="sub">Naučeno ' + kc + ' od ' + total + '. ' + (unk === 0 ? 'Znaš sva pitanja.' : 'Ostalo je još ' + unk + '.') + '</span>' +
+      '<div style="margin-top:8px">' + bar(p) + '</div>' +
+    '</div>' +
+    '<div class="stack">' +
+      (unk > 0 ? '<button class="btn primary" data-act="startUnknown">Ponovi nenaučene (' + unk + ')</button>' : '') +
+      '<button class="btn' + (unk > 0 ? '' : ' primary') + '" data-act="toDeck">Glavni meni</button>' +
+    '</div></div>';
+}
+
+function viewEdit() {
+  var d = deck();
+  var delLabel = ui.confirm === 'delDeck' ? 'Dodirni ponovo da obrišeš špil' : 'Obriši špil';
+  var cards = d.cards.map(function (c, i) {
+    return '<div class="ed-card" data-card="' + c.id + '">' +
+      '<div class="ed-top"><span class="eyebrow">Pitanje ' + esc(cardNo(d, c)) + '</span>' +
+      '<button class="link danger" data-act="delCard" data-arg="' + c.id + '">Obriši</button></div>' +
+      '<textarea class="input ed-q" id="q-' + c.id + '" data-field="q" data-id="' + c.id + '" rows="1" placeholder="Pitanje" aria-label="Pitanje">' + esc(c.q) + '</textarea>' +
+      '<textarea class="input" id="a-' + c.id + '" data-field="a" data-id="' + c.id + '" rows="2" placeholder="Odgovor" aria-label="Odgovor">' + esc(c.a) + '</textarea>' +
+      '</div>';
+  }).join('');
+  return '<div class="screen edit">' +
+    '<div class="topbar"><button class="nav-back" data-act="toDeck">' + ICON.back + 'Gotovo</button>' +
+    '<button class="link" data-act="export"' + (d.cards.length ? '' : ' disabled') + '>Kopiraj kao tekst</button></div>' +
+    '<div class="field"><label class="label" for="deckName">Naziv špila</label>' +
+    '<input class="input name-input" id="deckName" data-deck="name" value="' + esc(d.name) + '" placeholder="Naziv špila" autocomplete="off"></div>' +
+    '<div class="field"><label class="label" for="deckTag">Podnaslov</label>' +
+    '<input class="input" id="deckTag" data-deck="tag" value="' + esc(d.tag || '') + '" placeholder="npr. Pitanja za test" autocomplete="off"></div>' +
+    '<details class="import"' + (d.cards.length ? '' : ' open') + '><summary>Uvezi više kartica iz teksta</summary><div class="body">' +
+      '<p>Nalepi tekst. Kartice odvoji praznim redom: prvi red je pitanje, ostali redovi su odgovor. Radi i format <code>pitanje[Tab]odgovor</code> po redu, kao izvoz iz Quizleta.</p>' +
+      '<textarea class="input" id="importText" rows="6" placeholder="Šta je IP adresa?&#10;Jedinstvena adresa uređaja u mreži.&#10;&#10;Šta je ruter?&#10;Uređaj koji povezuje mreže."></textarea>' +
+      '<button class="btn small primary" data-act="import">Dodaj kartice</button>' +
+    '</div></details>' +
+    '<div class="row-between"><span class="label">Kartice (' + d.cards.length + ')</span></div>' +
+    '<div class="ed-list">' + cards + '</div>' +
+    '<button class="btn add-deck" data-act="addCard">+ Nova kartica</button>' +
+    '<button class="link danger" data-act="delDeck">' + delLabel + '</button>' +
+    '</div>';
+}
+
+/* ---------- render ---------- */
+var app = document.getElementById('app');
+function applyTheme() {
+  document.body.classList.toggle('t-dark', data.theme === 'tamna');
+  document.body.classList.toggle('t-light', data.theme === 'svetla');
+}
+function render(keepScroll) {
+  applyTheme();
+  var prevScroll = keepScroll && app.querySelector('.screen') ? app.querySelector('.screen').scrollTop : 0;
+  var v = { home: viewHome, deck: viewDeck, cards: viewStudy, done: viewDone, edit: viewEdit }[ui.screen];
+  var html = v();
+  if (ui.screen !== lastScreen && ui.screen !== 'cards') html = html.replace('class="screen', 'class="screen enter');
+  var fsBtn = document.fullscreenEnabled
+    ? '<button class="fs" data-act="fs" aria-label="' + (ui.fs ? 'Izađi iz celog ekrana' : 'Ceo ekran') + '" title="' + (ui.fs ? 'Izađi iz celog ekrana' : 'Ceo ekran') + '">' + (ui.fs ? ICON.fsOff : ICON.fsOn) + '</button>'
+    : '';
+  app.innerHTML = fsBtn + html;
+  if (keepScroll) app.querySelector('.screen').scrollTop = prevScroll;
+  lastScreen = ui.screen;
+  if (ui.screen === 'cards') lastTick = ui.tick;
+}
+
+function toast(msg) {
+  var old = document.querySelector('.toast'); if (old) old.remove();
+  var t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status'); t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(function () { t.remove(); }, 2200);
+}
+
+function askConfirm(key) {
+  if (ui.confirm === key) { ui.confirm = null; clearTimeout(confirmTimer); return true; }
+  ui.confirm = key; clearTimeout(confirmTimer);
+  confirmTimer = setTimeout(function () { ui.confirm = null; render(true); }, 3000);
+  render(true);
+  return false;
+}
+
+/* ---------- akcije ---------- */
+function begin(ids) {
+  if (!ids.length) return;
+  ui.order = data.random ? shuffled(ids) : ids.slice();
+  ui.i = 0; ui.flipped = false; ui.dir = 'R'; ui.tick++; ui.screen = 'cards';
+  render();
+}
+function go(next) {
+  if (next >= ui.order.length) { ui.screen = 'done'; ui.flipped = false; render(); return; }
+  if (next < 0) return;
+  ui.dir = next < ui.i ? 'L' : 'R'; ui.i = next; ui.flipped = false; ui.tick++;
+  render();
+}
+function mark(knew) {
+  var d = deck(), id = ui.order[ui.i];
+  if (knew) d.known[id] = true; else delete d.known[id];
+  save(); go(ui.i + 1);
+}
+function flip() { ui.flipped = !ui.flipped; render(); }
+
+function parseImport(text) {
+  text = text.replace(/\r\n?/g, '\n').trim();
+  if (!text) return [];
+  var lines = text.split('\n');
+  var tabbed = lines.filter(function (l) { return l.indexOf('\t') > 0; }).length;
+  if (tabbed && tabbed >= lines.filter(function (l) { return l.trim(); }).length / 2) {
+    return lines.filter(function (l) { return l.trim(); }).map(function (l) {
+      var k = l.indexOf('\t');
+      return k < 0 ? { q: l.trim(), a: '' } : { q: l.slice(0, k).trim(), a: l.slice(k + 1).trim().replace(/\\n/g, '\n') };
+    });
+  }
+  return text.split(/\n\s*\n/).map(function (b) {
+    var ls = b.split('\n');
+    return { q: ls[0].trim(), a: ls.slice(1).join('\n').trim() };
+  }).filter(function (c) { return c.q; });
+}
+function nextNo(d) {
+  var max = 0;
+  d.cards.forEach(function (c) { var x = parseInt(c.n, 10); if (x > max) max = x; });
+  return Math.max(max, d.cards.length);
+}
+
+var acts = {
+  home: function () { ui.screen = 'home'; ui.confirm = null; render(); },
+  open: function (id) { ui.deckId = id; ui.screen = 'deck'; ui.confirm = null; render(); },
+  newDeck: function () {
+    var d = { id: uid(), name: 'Novi špil', tag: '', cards: [], known: {} };
+    data.decks.push(d); save();
+    ui.deckId = d.id; ui.screen = 'edit'; render();
+    var n = document.getElementById('deckName'); if (n) { n.focus(); n.select(); }
+  },
+  theme: function (v) { data.theme = v; save(); render(true); },
+  order: function (v) { data.random = v === 'rnd'; save(); render(true); },
+  startAll: function () { begin(deck().cards.map(function (c) { return c.id; })); },
+  startUnknown: function () { begin(unknownIds(deck())); },
+  reset: function () { if (askConfirm('reset')) { deck().known = {}; save(); render(true); toast('Napredak je resetovan'); } },
+  edit: function () { ui.screen = 'edit'; ui.confirm = null; render(); },
+  toDeck: function () { ui.screen = 'deck'; ui.flipped = false; ui.confirm = null; render(); },
+  flip: flip,
+  prev: function () { go(ui.i - 1); },
+  yes: function () { mark(true); },
+  no: function () { mark(false); },
+  fs: function () {
+    try {
+      var p = document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+      if (p && p.catch) p.catch(function () {});
+    } catch (e) {}
+  },
+  addCard: function () {
+    var d = deck(), c = { id: uid(), n: String(nextNo(d) + 1), q: '', a: '' };
+    d.cards.push(c); save(); render(true);
+    var el = document.getElementById('q-' + c.id);
+    if (el) { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.focus({ preventScroll: true }); }
+  },
+  delCard: function (id) {
+    var d = deck();
+    d.cards = d.cards.filter(function (c) { return c.id !== id; });
+    delete d.known[id]; save(); render(true); toast('Kartica je obrisana');
+  },
+  delDeck: function () {
+    if (!askConfirm('delDeck')) return;
+    data.decks = data.decks.filter(function (d) { return d.id !== ui.deckId; });
+    save(); ui.screen = 'home'; render(); toast('Špil je obrisan');
+  },
+  import: function () {
+    var ta = document.getElementById('importText');
+    var list = parseImport(ta.value);
+    if (!list.length) { toast('Nema kartica u tekstu. Proveri format.'); return; }
+    var d = deck(), start = nextNo(d);
+    list.forEach(function (c, k) { d.cards.push({ id: uid(), n: String(start + k + 1), q: c.q, a: c.a }); });
+    save(); render(true);
+    toast('Dodato: ' + list.length + ' ' + karticaWord(list.length));
+  },
+  export: function () {
+    var d = deck();
+    var text = d.cards.map(function (c) { return c.q + (c.a ? '\n' + c.a.replace(/\n\s*\n/g, '\n') : ''); }).join('\n\n');
+    var done = function () { toast('Kopirano: ' + d.cards.length + ' ' + karticaWord(d.cards.length)); };
+    var fallback = function () {
+      var det = document.querySelector('.import'); det.open = true;
+      var ta = document.getElementById('importText'); ta.value = text; ta.focus(); ta.select();
+      toast('Tekst je označen. Kopiraj ga sa Ctrl+C.');
+    };
+    try { navigator.clipboard.writeText(text).then(done, fallback); } catch (e) { fallback(); }
+  }
+};
+
+document.addEventListener('click', function (e) {
+  var el = e.target.closest('[data-act]');
+  if (!el || el.disabled) return;
+  if (swipe.suppressClick) { swipe.suppressClick = false; return; }
+  var f = acts[el.dataset.act];
+  if (f) f(el.dataset.arg, el);
+});
+
+document.addEventListener('input', function (e) {
+  var t = e.target, d = deck();
+  if (!d) return;
+  if (t.dataset.field) {
+    var c = cardById(d, t.dataset.id);
+    if (c) { c[t.dataset.field] = t.value; save(); }
+    autosize(t);
+  } else if (t.dataset.deck) {
+    d[t.dataset.deck] = t.value; save();
+  }
+});
+function autosize(t) {
+  if (CSS.supports && CSS.supports('field-sizing', 'content')) return;
+  t.style.height = 'auto'; t.style.height = t.scrollHeight + 2 + 'px';
+}
+
+document.addEventListener('keydown', function (e) {
+  var tag = (e.target.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea') return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (ui.screen === 'cards') {
+    var onButton = e.target.closest && e.target.closest('button');
+    if ((e.key === ' ' || e.key === 'Enter') && onButton && !onButton.classList.contains('card')) return;
+    if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); flip(); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); ui.flipped ? mark(false) : go(ui.i - 1); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); ui.flipped ? mark(true) : flip(); }
+    else if (e.key === '1' && ui.flipped) mark(false);
+    else if (e.key === '2' && ui.flipped) mark(true);
+    else if (e.key === 'Escape' && !document.fullscreenElement) acts.toDeck();
+  } else if (ui.screen === 'done' && e.key === 'Escape') acts.toDeck();
+});
+
+/* prevlačenje kartice na telefonu */
+var swipe = { x: 0, y: 0, dx: 0, active: false, el: null, suppressClick: false };
+document.addEventListener('touchstart', function (e) {
+  if (ui.screen !== 'cards') return;
+  var area = e.target.closest('#cardArea'); if (!area) return;
+  var t = e.touches[0];
+  swipe = { x: t.clientX, y: t.clientY, dx: 0, active: true, horiz: null, el: area.querySelector('.card'), suppressClick: false };
+}, { passive: true });
+document.addEventListener('touchmove', function (e) {
+  if (!swipe.active || !swipe.el) return;
+  var t = e.touches[0], dx = t.clientX - swipe.x, dy = t.clientY - swipe.y;
+  if (swipe.horiz === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) swipe.horiz = Math.abs(dx) > Math.abs(dy);
+  if (!swipe.horiz) return;
+  swipe.dx = dx;
+  swipe.el.classList.add('dragging');
+  swipe.el.style.animation = 'none';
+  swipe.el.style.transform = 'translateX(' + dx * 0.7 + 'px) rotate(' + dx * 0.02 + 'deg)';
+}, { passive: true });
+document.addEventListener('touchend', function () {
+  if (!swipe.active) return;
+  swipe.active = false;
+  var dx = swipe.dx, el = swipe.el;
+  if (!swipe.horiz || !el) return;
+  swipe.suppressClick = true;
+  setTimeout(function () { swipe.suppressClick = false; }, 350);
+  if (Math.abs(dx) > 70) {
+    if (ui.flipped) mark(dx > 0);
+    else if (dx < 0) flip();
+    else if (ui.i > 0) go(ui.i - 1);
+    else settle(el);
+  } else settle(el);
+});
+function settle(el) {
+  el.classList.remove('dragging'); el.classList.add('settle'); el.style.transform = '';
+  setTimeout(function () { el.classList.remove('settle'); }, 260);
+}
+
+document.addEventListener('fullscreenchange', function () { ui.fs = !!document.fullscreenElement; render(true); });
+
+render();
+</script>
+
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
+}
+</script>
+</body>
+</html>
