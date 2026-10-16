@@ -1,0 +1,262 @@
+/* Kartice — jezik
+   Natpisi su napisani na srpskoj latinici i služe kao ključevi.
+   Ćirilica se dobija automatskom transliteracijom, engleski iz rečnika EN.
+   Tvoje kartice i beleške se ne prevode. */
+
+var LANG = 'sr';   // 'sr' (latinica) | 'sr-Cyrl' (ćirilica) | 'en'
+
+function setLang(l) { LANG = (l === 'sr-Cyrl' || l === 'en') ? l : 'sr'; }
+function dateLocale() { return LANG === 'en' ? 'en-GB' : LANG === 'sr-Cyrl' ? 'sr-Cyrl' : 'sr-Latn'; }
+
+/* ---------- latinica → ćirilica ---------- */
+var CYR_MAP = {
+  'Lj': 'Љ', 'LJ': 'Љ', 'lj': 'љ', 'Nj': 'Њ', 'NJ': 'Њ', 'nj': 'њ', 'Dž': 'Џ', 'DŽ': 'Џ', 'dž': 'џ',
+  'A': 'А', 'B': 'Б', 'C': 'Ц', 'Č': 'Ч', 'Ć': 'Ћ', 'D': 'Д', 'Đ': 'Ђ', 'E': 'Е', 'F': 'Ф', 'G': 'Г', 'H': 'Х',
+  'I': 'И', 'J': 'Ј', 'K': 'К', 'L': 'Л', 'M': 'М', 'N': 'Н', 'O': 'О', 'P': 'П', 'R': 'Р', 'S': 'С', 'Š': 'Ш',
+  'T': 'Т', 'U': 'У', 'V': 'В', 'Z': 'З', 'Ž': 'Ж',
+  'a': 'а', 'b': 'б', 'c': 'ц', 'č': 'ч', 'ć': 'ћ', 'd': 'д', 'đ': 'ђ', 'e': 'е', 'f': 'ф', 'g': 'г', 'h': 'х',
+  'i': 'и', 'j': 'ј', 'k': 'к', 'l': 'л', 'm': 'м', 'n': 'н', 'o': 'о', 'p': 'п', 'r': 'р', 's': 'с', 'š': 'ш',
+  't': 'т', 'u': 'у', 'v': 'в', 'z': 'з', 'ž': 'ж'
+};
+// reči koje ostaju latinicom (nazivi formata, tastera i servisa)
+var KEEP_LATIN = { Esc: 1, Tab: 1, Ctrl: 1, Quizlet: 1, Word: 1, Serif: 1, Mono: 1, docx: 1, txt: 1, pdf: 1, json: 1, doc: 1 };
+function cyrWord(w) {
+  if (KEEP_LATIN[w] || (w.length > 1 && w === w.toUpperCase())) return w;
+  return w.replace(/Lj|LJ|lj|Nj|NJ|nj|Dž|DŽ|dž|[A-Za-zČĆĐŠŽčćđšž]/g, function (c) { return CYR_MAP[c] || c; });
+}
+function cyr(s) {
+  return s.replace(/[A-Za-zČĆĐŠŽčćđšž]+/g, function (w, i, all) {
+    return all[i - 1] === '.' ? w : cyrWord(w);   // .txt, .pdf ostaju latinicom
+  });
+}
+
+/* ---------- prevod ---------- */
+function t(s, vars) {
+  var out = LANG === 'en' && EN[s] !== undefined ? EN[s] : s;
+  // ćirilica samo za tekst natpisa, ne i za umetnute vrednosti (nazivi špilova, beleški...)
+  var parts = out.split(/(\{\w+\})/);
+  return parts.map(function (p) {
+    var m = /^\{(\w+)\}$/.exec(p);
+    if (m) return vars && vars[m[1]] != null ? vars[m[1]] : p;
+    return LANG === 'sr-Cyrl' ? cyr(p) : p;
+  }).join('');
+}
+
+/* množina: pw(5, 'kartica') → "kartica" / "cards" */
+var PLURALS = {
+  'kartica': [['kartica', 'kartice', 'kartica'], ['card', 'cards']],
+  'špil': [['špil', 'špila', 'špilova'], ['deck', 'decks']],
+  'beleška': [['beleška', 'beleške', 'beleški'], ['note', 'notes']],
+  'folder': [['folder', 'foldera', 'foldera'], ['folder', 'folders']],
+  'strana': [['strana', 'strane', 'strana'], ['page', 'pages']]
+};
+function srPlural(n, one, few, many) {
+  var m10 = n % 10, m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return one;
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
+  return many;
+}
+function pw(n, key) {
+  var f = PLURALS[key];
+  if (LANG === 'en') return n === 1 ? f[1][0] : f[1][1];
+  var w = srPlural(n, f[0][0], f[0][1], f[0][2]);
+  return LANG === 'sr-Cyrl' ? cyr(w) : w;
+}
+
+var EN = {
+  'Naučena pitanja': 'Learned questions',
+  'Bez naziva': 'Untitled',
+  '{p}% naučeno': '{p}% learned',
+  'Obriši': 'Delete',
+  'Nemaš nijednu belešku.': 'You have no notes yet.',
+  'Nemaš nijedan špil. Napravi prvi.': 'You have no decks. Create your first one.',
+  'Učenje kartica': 'Flashcard study',
+  'Kartice': 'Flashcards',
+  'Gotovo': 'Done',
+  'Izmeni': 'Edit',
+  'Podešavanja': 'Settings',
+  'Špilovi': 'Decks',
+  'Beleške': 'Notes',
+  '+ Novi špil': '+ New deck',
+  'Tema': 'Theme',
+  'Sistem': 'System',
+  'Tamna': 'Dark',
+  'Svetla': 'Light',
+  'Plava': 'Blue',
+  'Prazna beleška': 'Empty note',
+  'Materijal': 'Material',
+  'PDF dokument': 'PDF document',
+  'stao si na {n}. strani': 'stopped at page {n}',
+  'Word dokument': 'Word document',
+  'Bez naslova': 'Untitled',
+  '+ Nova beleška': '+ New note',
+  'Uvezi fajl': 'Import file',
+  'Pretraži beleške': 'Search notes',
+  'Folderi': 'Folders',
+  '+ Novi folder': '+ New folder',
+  'Materijali': 'Materials',
+  'Beleške van foldera': 'Notes outside folders',
+  'Ovde nema beleški. Napiši novu ili uvezi .txt, PDF ili Word (.docx) fajl.': 'No notes here. Write a new one or import a .txt, PDF or Word (.docx) file.',
+  'Preimenuj': 'Rename',
+  'Folder': 'Folder',
+  'Folder je prazan. Napiši belešku, uvezi fajl ili premesti postojeću belešku ovde.': 'This folder is empty. Write a note, import a file or move an existing note here.',
+  'Premesti': 'Move',
+  'Preuzmi .txt': 'Save .txt',
+  'Preuzmi': 'Save',
+  'Ova beleška je prazna.': 'This note is empty.',
+  'Naslov': 'Title',
+  'Naslov beleške': 'Note title',
+  'Piši ovde…': 'Write here…',
+  'Tekst beleške': 'Note text',
+  'Sačuvano automatski · {d}': 'Saved automatically · {d}',
+  'Obriši belešku': 'Delete note',
+  'Učitavam dokument…': 'Loading document…',
+  'Obriši dokument': 'Delete document',
+  'Opcije': 'Options',
+  'Učitavam PDF…': 'Loading PDF…',
+  'Prethodna strana': 'Previous page',
+  'Strana': 'Page',
+  'Sledeća strana': 'Next page',
+  'Špil': 'Deck',
+  'Naučeno': 'Learned',
+  'Redosled': 'Order',
+  'Po redu': 'In order',
+  'Nasumično': 'Shuffled',
+  'Špil je prazan. Dodaj prve kartice.': 'This deck is empty. Add your first cards.',
+  'Počni sve kartice': 'Study all cards',
+  'Samo nenaučene ({n})': 'Only unlearned ({n})',
+  'Izmeni kartice': 'Edit cards',
+  'Resetuj napredak': 'Reset progress',
+  'Obriši špil': 'Delete deck',
+  'Meni': 'Menu',
+  'Okreni karticu': 'Flip card',
+  'Pitanje {n}': 'Question {n}',
+  'Dodirni za odgovor': 'Tap for the answer',
+  'Klikni za odgovor': 'Click for the answer',
+  'Prethodna kartica': 'Previous card',
+  'Prikaži odgovor': 'Show answer',
+  'Razmak': 'Space',
+  'okreni': 'flip',
+  'prethodna': 'previous',
+  'meni': 'menu',
+  'Za ovo pitanje nema tekstualnog odgovora (zadatak je crtež).': 'This question has no text answer (the task is a drawing).',
+  'Vrati na pitanje': 'Back to the question',
+  'Prevuci desno ako znaš, levo ako ne znaš': 'Swipe right if you know it, left if you don’t',
+  'Klikni karticu za pitanje': 'Click the card for the question',
+  'Ne znam': 'Don’t know',
+  'Znam': 'Know it',
+  'ili': 'or',
+  'ne znam': 'don’t know',
+  'znam': 'know it',
+  'pitanje': 'question',
+  'Krug završen': 'Round complete',
+  'Naučeno {k} od {n}.': 'Learned {k} of {n}.',
+  'Znaš sva pitanja.': 'You know every question.',
+  'Ostalo je još {n}.': '{n} left to learn.',
+  'Ponovi nenaučene ({n})': 'Repeat unlearned ({n})',
+  'Glavni meni': 'Main menu',
+  'Pitanje': 'Question',
+  'Odgovor': 'Answer',
+  'Kopiraj kao tekst': 'Copy as text',
+  'Naziv špila': 'Deck name',
+  'Podnaslov': 'Subtitle',
+  'npr. Pitanja za test': 'e.g. Exam questions',
+  'Uvezi više kartica iz teksta': 'Import several cards from text',
+  'Nalepi tekst. Kartice odvoji praznim redom: prvi red je pitanje, ostali redovi su odgovor. Radi i format pitanje[Tab]odgovor po redu, kao izvoz iz Quizleta.': 'Paste text. Separate cards with a blank line: the first line is the question, the other lines are the answer. The question[Tab]answer per line format from a Quizlet export also works.',
+  'Šta je IP adresa?\nJedinstvena adresa uređaja u mreži.\n\nŠta je ruter?\nUređaj koji povezuje mreže.': 'What is an IP address?\nA unique address of a device on a network.\n\nWhat is a router?\nA device that connects networks.',
+  'Dodaj kartice': 'Add cards',
+  'Kartice ({n})': 'Cards ({n})',
+  '+ Nova kartica': '+ New card',
+  'Nazad': 'Back',
+  'Izgled': 'Appearance',
+  'Font': 'Font',
+  'Sistemski': 'System',
+  'Zaobljeni': 'Rounded',
+  'Veličina teksta u karticama i beleškama': 'Text size in cards and notes',
+  'Mala': 'Small',
+  'Srednja': 'Medium',
+  'Velika': 'Large',
+  'Najveća': 'Largest',
+  'Šta su računarske mreže?': 'What are computer networks?',
+  'Ovako izgleda tekst kartice i beleške sa izabranim fontom i veličinom.': 'This is how card and note text looks with the chosen font and size.',
+  'Jezik': 'Language',
+  'Jezik menja natpise u aplikaciji. Tvoje kartice i beleške ostaju kako si ih napisao.': 'The language changes the app’s labels. Your cards and notes stay as you wrote them.',
+  'Učenje i čitanje': 'Studying and reading',
+  'Smanji animacije': 'Reduce motion',
+  'Kartice i stranice se menjaju bez pokreta.': 'Cards and pages change without movement.',
+  'Tamne PDF stranice': 'Dark PDF pages',
+  'PDF se prikazuje sa tamnom pozadinom i svetlim tekstom.': 'PDFs show with a dark background and light text.',
+  'Podaci': 'Data',
+  'Računam zauzeće…': 'Calculating storage…',
+  'Napravi rezervnu kopiju': 'Create a backup',
+  'Vrati iz rezervne kopije': 'Restore from a backup',
+  'Kopija sadrži sve špilove, napredak, beleške, foldere i fajlove. Sačuvaj je u Fajlove ili na računar; tako možeš da preneseš sve na drugi telefon ili pregledač.': 'The backup contains all decks, progress, notes, folders and files. Save it to Files or your computer to move everything to another phone or browser.',
+  'O aplikaciji': 'About',
+  'Kartice · verzija {v}': 'Flashcards · version {v}',
+  'Izađi iz celog ekrana': 'Exit full screen',
+  'Ceo ekran': 'Full screen',
+  'Obrisati špil?': 'Delete deck?',
+  'Da li ste sigurni da hoćete da obrišete špil „{name}“? Biće obrisane sve kartice i napredak u njemu.': 'Are you sure you want to delete the deck “{name}”? All its cards and progress will be deleted.',
+  'Nemoj da brišeš': 'Don’t delete',
+  'Špil „{name}“ je obrisan': 'Deck “{name}” deleted',
+  'Vrati': 'Undo',
+  'Beleška „{name}“ je obrisana': 'Note “{name}” deleted',
+  'Obrisati dokument?': 'Delete document?',
+  'Dokument „{name}“ biće obrisan sa ovog uređaja.': 'The document “{name}” will be deleted from this device.',
+  'Otkaži': 'Cancel',
+  'Novi folder': 'New folder',
+  'Naziv foldera': 'Folder name',
+  'Napravi folder': 'Create folder',
+  'Preimenuj folder': 'Rename folder',
+  'Sačuvaj': 'Save',
+  'Obriši folder i beleške ({n})': 'Delete folder and notes ({n})',
+  'Obriši samo folder': 'Delete only the folder',
+  'Obriši folder': 'Delete folder',
+  'Obrisati folder?': 'Delete folder?',
+  'Folder „{name}“ ima {n} {w}. Možeš da obrišeš i njih, ili samo folder, pa će beleške preći u „Beleške van foldera“.': 'The folder “{name}” has {n} {w}. You can delete them too, or only the folder, and the notes will move to “Notes outside folders”.',
+  'Folder „{name}“ je prazan.': 'The folder “{name}” is empty.',
+  'Folder „{name}“ je obrisan': 'Folder “{name}” deleted',
+  'Premešteno u „{name}“': 'Moved to “{name}”',
+  'Premešteno u „Beleške van foldera“': 'Moved to “Notes outside folders”',
+  'Premesti u folder': 'Move to folder',
+  '„{name}“: stari .doc format nije podržan, sačuvaj ga kao .docx': '“{name}”: the old .doc format is not supported, save it as .docx',
+  '„{name}“: podržani su .txt, .pdf i .docx': '“{name}”: supported formats are .txt, .pdf and .docx',
+  '„{name}“: nema dovoljno prostora ili fajl nije mogao da se pročita': '“{name}”: not enough space, or the file could not be read',
+  'Uvezeno: {n}': 'Imported: {n}',
+  'Fajl nije uvezen': 'File not imported',
+  'U redu': 'OK',
+  'Uvezeno: {n} {w}': 'Imported: {n} {w}',
+  'Fajl nije pronađen na ovom uređaju.': 'The file was not found on this device.',
+  'Fajl je spreman': 'The file is ready',
+  'Dokument nema teksta.': 'The document has no text.',
+  'Dokument nije mogao da se otvori. Proveri da li je fajl ispravan .docx.': 'The document could not be opened. Check that the file is a valid .docx.',
+  'PDF nije mogao da se otvori. Proveri da li je fajl ispravan.': 'The PDF could not be opened. Check that the file is valid.',
+  'Svetle stranice': 'Light pages',
+  'Tamne stranice': 'Dark pages',
+  'Idi na stranu…': 'Go to page…',
+  'Idi na stranu': 'Go to page',
+  'Idi': 'Go',
+  'Preuzmi PDF': 'Save PDF',
+  'Zatvori': 'Close',
+  'Pripremam rezervnu kopiju…': 'Preparing the backup…',
+  'Rezervna kopija je spremna': 'The backup is ready',
+  'Rezervna kopija nije uspela.': 'The backup failed.',
+  'Ovo nije rezervna kopija Kartica': 'This is not a Flashcards backup',
+  'Izaberi .json fajl koji si napravio dugmetom „Napravi rezervnu kopiju“.': 'Choose the .json file you made with “Create a backup”.',
+  'Vratiti rezervnu kopiju?': 'Restore the backup?',
+  'Kopija ima {d} {dw} i {n} {nw}. Sve trenutne kartice, beleške i fajlovi na ovom uređaju biće zamenjeni.': 'The backup has {d} {dw} and {n} {nw}. All current cards, notes and files on this device will be replaced.',
+  'Vrati kopiju': 'Restore backup',
+  'Vraćanje nije uspelo. Nema dovoljno prostora na uređaju.': 'Restoring failed. There is not enough space on the device.',
+  'Aplikacija zauzima {s} na ovom uređaju.': 'The app uses {s} on this device.',
+  'Novi špil': 'New deck',
+  'Resetovati napredak?': 'Reset progress?',
+  'Sve kartice u ovom špilu biće označene kao nenaučene.': 'All cards in this deck will be marked as unlearned.',
+  'Napredak je resetovan': 'Progress reset',
+  'Kartica je obrisana': 'Card deleted',
+  'Nema kartica u tekstu. Proveri format.': 'No cards found in the text. Check the format.',
+  'Dodato: {n} {w}': 'Added: {n} {w}',
+  'Kopirano: {n} {w}': 'Copied: {n} {w}',
+  'Tekst je označen. Kopiraj ga sa Ctrl+C.': 'The text is selected. Copy it with Ctrl+C.',
+  'Rezultati': 'Results',
+  'Nijedna beleška ne sadrži taj tekst.': 'No note contains that text.'
+};

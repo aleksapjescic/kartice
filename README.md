@@ -1,36 +1,44 @@
 # Kartice
 
-Aplikacija za učenje sa karticama. Radi u pregledaču, a na telefonu se instalira kao aplikacija (PWA) i radi bez interneta.
+Aplikacija za učenje sa karticama i beleškama. Radi u pregledaču, a na telefonu se instalira kao aplikacija (PWA) i radi bez interneta.
+
+Adresa: https://aleksapjescic.github.io/kartice/
+
+## Šta ume
+
+- špilovi kartica sa praćenjem naučenog, učenje po redu ili nasumično, prevlačenje na telefonu
+- beleške: tekstualne, PDF (listanje stranica kao u knjizi) i Word .docx (u bojama izabrane teme)
+- folderi za beleške, premeštanje beleški između foldera
+- podešavanja: tema, font, veličina teksta, jezik (latinica, ćirilica, engleski), smanjene animacije, tamne PDF stranice
+- rezervna kopija svih podataka u jedan .json fajl i vraćanje iz nje
 
 ## Fajlovi
 
 | Fajl | Čemu služi |
 |---|---|
-| `index.html` | cela aplikacija |
-| `manifest.json` | ime, ikonica i otvaranje preko celog ekrana |
+| `index.html` | okvir stranice |
+| `styles.css` | izgled |
+| `app.js` | logika aplikacije |
+| `i18n.js` | jezici: natpisi, ćirilica, engleski prevod |
+| `data.js` | početni špil i beleške iz materijala |
+| `vendor/` | pdf.js (PDF), mammoth (Word), StPageFlip (listanje stranica) |
 | `sw.js` | rad bez interneta |
-| `icon-192.png`, `icon-512.png`, `apple-touch-icon.png` | ikonice |
+| `version.json` | broj verzije za automatsko ažuriranje |
+| `manifest.json`, ikonice | ime i ikonica na početnom ekranu |
 
-## Postavljanje na GitHub Pages (jednom)
+PDF i Word fajlovi čuvaju se u IndexedDB na uređaju, ostalo u localStorage.
 
-1. Na github.com klikni **+** → **New repository**.
-2. Ime: `kartice`. Izaberi **Public**. Klikni **Create repository**.
-3. Klikni **uploading an existing file**. Prevuci svih 7 fajlova iz foldera (fajlove, ne ceo folder). Klikni **Commit changes**.
-4. U repozitorijumu idi na **Settings** → **Pages**.
-5. Pod **Branch** izaberi `main` i `/ (root)`, pa **Save**.
-6. Sačekaj 1–2 minuta i osveži stranicu. Gore će pisati adresa:
-   `https://TVOJE-IME.github.io/kartice/`
+## Objavljivanje nove verzije
+
+Broj verzije mora da bude isti na tri mesta:
+
+1. `APP_VERSION` na vrhu `app.js`
+2. `version.json`
+3. `?v=` parametri u `index.html`
+
+Posle objavljivanja aplikacija na telefonu sama preuzme novu verziju kad se otvori dok ima internet.
 
 ## Instalacija na iPhone
 
-1. Otvori tu adresu u **Safariju**.
-2. Dodirni dugme **Share** (kvadrat sa strelicom nagore).
-3. Izaberi **Add to Home Screen** (Dodaj na početni ekran), pa **Add**.
-4. Otvaraj aplikaciju samo preko ikonice. Napredak iz Safarija i napredak iz ikonice se na iPhone-u čuvaju odvojeno.
-
-## Ažuriranje
-
-1. U repozitorijumu klikni **Add file** → **Upload files** i prevuci novi `index.html`. Klikni **Commit changes**.
-2. Posle 1–2 minuta otvori aplikaciju na telefonu dok imaš internet. Nova verzija se učita sama.
-
-Kartice i napredak ostaju sačuvani posle ažuriranja. Adresa repozitorijuma ne sme da se menja.
+Otvori adresu u **Chromu** (u Safariju iOS 26 ne prikazuje aplikaciju do dna ekrana), pa Share → **Add to Home Screen**.
+Podaci se čuvaju posebno za svaku instaliranu ikonicu; za prenos koristi rezervnu kopiju iz podešavanja.

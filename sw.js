@@ -1,7 +1,11 @@
 // Service worker: aplikacija radi bez interneta.
 // Uvek prvo pokušava mrežu (da odmah dobiješ novu verziju), a bez mreže koristi sačuvanu kopiju.
 var CACHE = 'kartice';
-var FILES = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
+var FILES = [
+  './', './index.html', './styles.css', './data.js', './i18n.js', './app.js',
+  './manifest.json', './icon-192.png', './icon-512.png', './apple-touch-icon.png',
+  './vendor/pdf.min.js', './vendor/pdf.worker.min.js', './vendor/mammoth.browser.min.js', './vendor/page-flip.browser.js'
+];
 
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(FILES); }).then(function () { return self.skipWaiting(); }));
