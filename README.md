@@ -7,6 +7,7 @@ Adresa: https://aleksapjescic.github.io/kartice/
 ## Šta ume
 
 - špilovi kartica sa praćenjem naučenog, učenje po redu ili nasumično, prevlačenje na telefonu
+- kvizovi sa ponuđenim odgovorima: unos pitanja ili uvoz iz teksta, praćenje naučenog, ponavljanje netačnih i spisak grešaka
 - beleške: tekstualne, PDF (listanje stranica kao u knjizi) i Word .docx (u bojama izabrane teme)
 - folderi za beleške, premeštanje beleški između foldera
 - podešavanja: tema, font, veličina teksta, jezik (latinica, ćirilica, engleski), smanjene animacije, tamne PDF stranice

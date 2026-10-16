@@ -47,7 +47,7 @@ body.ts-l { --ts: 1.15; }
 body.ts-xl { --ts: 1.3; }
 
 html, body { height: 100%; }
-html { -webkit-text-size-adjust: 100%; }
+html { -webkit-text-size-adjust: 100%; touch-action: manipulation; }   /* bez zumiranja dvostrukim dodirom */
 body {
   margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font);
   overflow: hidden; transition: background-color .35s, color .35s;
@@ -227,6 +227,60 @@ textarea.input { resize: none; line-height: 1.45; min-height: 48px; field-sizing
 .import p { margin: 0; font-size: 14px; line-height: 1.5; color: var(--muted); }
 .import code { font-size: 13px; background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 1px 5px; }
 
+/* kviz: pitanje, ponuđeni odgovori, povratna informacija */
+.quiz-play { max-width: 760px; gap: 16px; }
+.quiz-body { flex: 1 0 auto; display: flex; flex-direction: column; gap: 14px; }
+.quiz-q { display: flex; flex-direction: column; gap: 10px; padding: 20px; border-radius: 20px; background: var(--card); border: 1px solid var(--line); }
+.quiz-q-text { font-size: calc(21px * var(--ts)); line-height: 1.3; font-weight: 600; letter-spacing: -.3px; overflow-wrap: anywhere; white-space: pre-line; }
+.quiz-q.in-R, .opts.in-R { animation: inR .35s cubic-bezier(.2,.8,.2,1); }
+.opts { display: flex; flex-direction: column; gap: 8px; }
+.opt {
+  display: flex; align-items: center; gap: 12px; width: 100%; min-height: 52px; box-sizing: border-box; text-align: left;
+  padding: 10px 14px; border-radius: 14px; border: 1px solid var(--line); background: var(--card); color: var(--ink);
+  font-size: calc(16px * var(--ts)); line-height: 1.35;
+}
+.opt:hover:not(:disabled) { border-color: var(--strong); }
+.opt:disabled { opacity: 1; cursor: default; }
+.opt-key {
+  flex: none; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px;
+  font-size: 13px; font-weight: 700; background: var(--bg); color: var(--muted); border: 1px solid var(--line);
+}
+.opt-text { min-width: 0; overflow-wrap: anywhere; }
+.opt.right { border-color: var(--good); background: color-mix(in srgb, var(--good) 16%, var(--card)); }
+.opt.right .opt-key { background: var(--good); color: var(--on-accent); border-color: transparent; }
+.opt.wrong { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 16%, var(--card)); }
+.opt.wrong .opt-key { background: var(--bad); color: var(--on-accent); border-color: transparent; }
+.opt.dim { opacity: .5; }
+.quiz-actions {
+  position: sticky; bottom: 0; z-index: 1; display: flex; flex-direction: column; gap: 10px;
+  padding-top: 12px; background: linear-gradient(to bottom, transparent, var(--bg) 12px);
+}
+.quiz-fb { margin: 0; font-size: 15px; font-weight: 600; text-align: center; animation: fadeIn .2s ease-out; }
+.quiz-fb.good { color: var(--good); }
+.quiz-fb.bad { color: var(--bad); }
+.quiz-done { max-width: 640px; }
+.mistakes { display: flex; flex-direction: column; gap: 8px; }
+.mistake { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--line); background: var(--card); }
+.mistake b { font-size: 15px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
+.mistake span { display: flex; align-items: flex-start; gap: 6px; font-size: 14px; line-height: 1.4; color: var(--good); overflow-wrap: anywhere; }
+.mistake svg { flex: none; margin-top: 1px; }
+
+/* uređivanje kviza: krug levo označava tačan odgovor */
+.ed-opts { display: flex; flex-direction: column; gap: 6px; }
+.ed-opt { display: grid; grid-template-columns: 30px minmax(0, 1fr) 30px; align-items: center; gap: 6px; }
+.ed-card .ed-opt .input { padding: 8px 12px; border-radius: 12px; }
+.mark {
+  width: 26px; height: 26px; justify-self: center; display: grid; place-items: center; padding: 0;
+  border-radius: 50%; border: 2px solid var(--strong); background: transparent; color: var(--on-accent);
+}
+.ed-opt.ok .mark { background: var(--good); border-color: var(--good); }
+.ed-card .ed-opt.ok .input { border-color: var(--good); }
+.ed-opt .opt-del { width: 30px; height: 30px; border-radius: 8px; }
+.ed-opt .opt-del svg { width: 16px; height: 16px; }
+.ed-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 32px; }
+.ed-foot .link { min-height: 32px; font-size: 14px; padding-left: 0; }
+.ed-warn { font-size: 13px; color: var(--bad); text-align: right; }
+
 /* obaveštenje */
 .toast {
   position: fixed; left: 0; right: 0; margin-inline: auto; bottom: calc(24px + env(safe-area-inset-bottom, 0px));
@@ -311,41 +365,74 @@ textarea.note-body { min-height: 50vh; min-height: 50dvh; font-size: calc(16px *
 .reader td p, .reader th p { margin: 0; }
 .read-title { font-size: 32px; letter-spacing: -.8px; }
 
-/* PDF čitač: strana preko celog ekrana, trake plutaju preko nje i sklanjaju se */
-.screen.pdf-screen {
+/* Prikaz preko celog ekrana (PDF i slike): sadržaj od ivice do ivice,
+   trake plutaju preko njega i sklanjaju se */
+.screen.viewer {
   position: fixed; inset: 0; z-index: 3; width: auto; height: auto; max-width: none;
   padding: 0; gap: 0; overflow: hidden; background: var(--bg);
 }
-body.on-pdf .fs { display: none; }
-.pdf-top, .pdf-bottom {
+body.on-viewer .fs { display: none; }
+.viewer-top, .viewer-bottom {
   position: absolute; left: 0; right: 0; z-index: 2;
   padding-left: max(12px, env(safe-area-inset-left, 0px)); padding-right: max(12px, env(safe-area-inset-right, 0px));
   background: color-mix(in srgb, var(--bg) 86%, transparent);
   -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
   transition: transform .3s ease, opacity .3s ease;
 }
-.pdf-top { top: 0; min-width: 0; padding-top: calc(env(safe-area-inset-top, 0px) + 4px); padding-bottom: 4px; border-bottom: 1px solid var(--line); }
-.pdf-bottom { bottom: 0; padding-top: 10px; padding-bottom: max(10px, env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--line); }
-.pdf-screen.ui-hidden .pdf-top { transform: translateY(-100%); opacity: 0; pointer-events: none; }
-.pdf-screen.ui-hidden .pdf-bottom { transform: translateY(100%); opacity: 0; pointer-events: none; }
-.pdf-title { flex: 1 1 auto; min-width: 0; text-align: center; font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.book-wrap {
+.viewer-top { top: 0; min-width: 0; padding-top: calc(env(safe-area-inset-top, 0px) + 4px); padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+.viewer-bottom { bottom: 0; padding-top: 10px; padding-bottom: max(10px, env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--line); }
+.viewer.ui-hidden .viewer-top { transform: translateY(-100%); opacity: 0; pointer-events: none; }
+.viewer.ui-hidden .viewer-bottom { transform: translateY(100%); opacity: 0; pointer-events: none; }
+.viewer-title { flex: 1 1 auto; min-width: 0; text-align: center; font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.viewer-area {
   position: absolute; z-index: 1; display: grid; place-items: center;
   top: env(safe-area-inset-top, 0px); bottom: env(safe-area-inset-bottom, 0px);
   left: env(safe-area-inset-left, 0px); right: env(safe-area-inset-right, 0px);
 }
-.book-loading { font-size: 15px; color: var(--muted); }
+/* skrolovanje i zumiranje: jednim prstom se skroluje, sa dva zumira (to radi app.js) */
+.viewer-area.zoomable {
+  display: block; overflow: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+  touch-action: pan-x pan-y; scrollbar-width: none;
+}
+.viewer-area.zoomable::-webkit-scrollbar { display: none; }
+.viewer-loading { font-size: 15px; color: var(--muted); }
+.zoomable > .viewer-loading { display: block; text-align: center; padding-top: 40vh; }
+.viewer-bottom { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto 48px; align-items: center; gap: 10px; flex: none; }
+.viewer-bottom .btn { height: 48px; padding: 0; display: grid; place-items: center; border-radius: 14px; }
+.viewer-bottom input[type="range"] { width: 100%; accent-color: var(--accent); }
+.viewer-bottom.img-nav { grid-template-columns: 48px 1fr 48px; }
+.viewer-count { font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 64px; text-align: center; }
+
+/* PDF: listanje kao knjiga */
 .book { position: relative; }
 .pdf-page { background: #fff; overflow: hidden; }
-.pdf-page canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; }
+.pdf-page canvas, .pdf-spage canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; }
 .pdf-page-no { position: absolute; inset: 0; display: grid; place-items: center; color: #b5b0a8; font-size: 15px; font-family: var(--font); }
-.dark-pages .pdf-page { background: #1b1b1b; }
-.dark-pages .pdf-page canvas { filter: invert(.9) hue-rotate(180deg); }
+.dark-pages .pdf-page, .dark-pages .pdf-spage { background: #1b1b1b; }
+.dark-pages .pdf-page canvas, .dark-pages .pdf-spage canvas { filter: invert(.9) hue-rotate(180deg); }
 .dark-pages .pdf-page-no { color: #555; }
-.pdf-bottom { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto 48px; align-items: center; gap: 10px; flex: none; }
-.pdf-bottom .btn { height: 48px; padding: 0; display: grid; place-items: center; border-radius: 14px; }
-.pdf-bottom input[type="range"] { width: 100%; accent-color: var(--accent); }
-.pdf-count { font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 64px; text-align: center; }
+
+/* PDF: skrolovanje, strane jedna ispod druge; širina = širina ekrana × zum */
+.pdf-stack { margin: 0 auto; display: flex; flex-direction: column; gap: 6px; padding: 56px 0 84px; box-sizing: content-box; }
+.pdf-spage { position: relative; width: 100%; background: #fff; overflow: hidden; flex: none; }
+
+/* slika preko celog ekrana */
+.img-stage { min-width: 100%; min-height: 100%; display: flex; align-items: center; justify-content: center; box-sizing: border-box; }
+.img-stage img { display: block; max-width: none; flex: none; -webkit-user-select: none; user-select: none; -webkit-user-drag: none; -webkit-touch-callout: none; }
+
+/* slike u belešci i umanjeni prikazi */
+.note-images { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.thumb {
+  position: relative; aspect-ratio: 1; max-width: 100%; padding: 0; border: 1px solid var(--line); border-radius: 12px;
+  overflow: hidden; background: var(--card) center / cover no-repeat;
+}
+.thumb.add { display: grid; place-items: center; border-style: dashed; color: var(--muted); font-size: 14px; font-weight: 500; background: transparent; }
+.note-item.has-thumb { display: grid; grid-template-columns: minmax(0, 1fr) 56px; column-gap: 12px; align-items: center; }
+.note-item.has-thumb .note-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.note-item .mini { width: 56px; height: 56px; border-radius: 10px; background: var(--line) center / cover no-repeat; }
+.badge.img { color: var(--good); border-color: color-mix(in srgb, var(--good) 45%, var(--line)); }
+.add-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.add-row .btn { height: 48px; font-size: 15px; }
 
 /* biblioteka za listanje (StPageFlip), bez njenog pravila za canvas */
 .stf__parent { position: relative; display: block; box-sizing: border-box; transform: translateZ(0); touch-action: pan-y; }
@@ -379,6 +466,7 @@ body.on-pdf .fs { display: none; }
 
 /* desktop */
 @media (min-width: 900px) {
+  .note-images { grid-template-columns: repeat(5, minmax(0, 1fr)); }
   .note-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .folder-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .home { max-width: 880px; }
@@ -395,10 +483,88 @@ body.on-pdf .fs { display: none; }
   .keys { display: flex; }
   .edit, .folder-screen { max-width: 760px; }
   .done { max-width: 640px; }
+  .quiz-play { padding-block: 48px 28px; }
+  .quiz-q { padding: 28px 32px; }
+  .quiz-q-text { font-size: calc(26px * var(--ts)); letter-spacing: -.5px; }
 }
 @media (max-height: 640px) and (max-width: 899px) {
   .screen { padding-bottom: 16px; }
   .q-big { font-size: calc(22px * var(--ts)); }
+}
+
+/* telefon uspravno: manja dugmad, slova i razmaci, da sve izgleda urednije */
+@media (max-width: 599px) {
+  #app { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .screen { gap: 16px; }
+  .eyebrow { font-size: 12px; }
+  h1 { font-size: 32px; letter-spacing: -.8px; }
+  .head { gap: 6px; }
+  .sub { font-size: 15px; }
+  .label { font-size: 12px; }
+
+  .btn { height: 46px; border-radius: 13px; font-size: 16px; padding: 0 14px; }
+  .btn.small { height: 38px; border-radius: 11px; font-size: 14px; }
+  .stack { gap: 8px; }
+  .link { min-height: 38px; font-size: 14px; }
+  .nav-back { min-height: 38px; font-size: 16px; }
+  .nav-back svg { width: 20px; height: 20px; }
+  .icon-btn { width: 38px; height: 38px; border-radius: 10px; }
+  .icon-btn svg { width: 20px; height: 20px; }
+  .fs { width: 38px; height: 38px; }
+  .seg { padding: 3px; gap: 3px; border-radius: 12px; }
+  .seg button { height: 34px; border-radius: 9px; font-size: 14px; }
+  .panel { padding: 14px 16px; gap: 8px; border-radius: 16px; }
+
+  .decks { gap: 8px; }
+  .deck { padding: 13px 16px; gap: 8px; border-radius: 16px; }
+  .deck-name { font-size: 17px; }
+  .deck-meta { font-size: 13px; }
+  .del-btn { height: 34px; padding: 0 12px; border-radius: 10px; font-size: 14px; }
+  .deck-menu, .deck-menu .col { gap: 18px; }
+
+  .study { gap: 14px; }
+  .card { border-radius: 20px; }
+  .card.front { padding: 22px 18px; }
+  .card.back { padding: 18px; gap: 12px; }
+  .q-big { font-size: calc(23px * var(--ts)); }
+  .actions { gap: 8px; }
+  .actions.front { grid-template-columns: 46px minmax(0, 1fr); }
+  .done { gap: 22px; }
+  .big-pct { font-size: 52px; }
+
+  .input { padding: 10px 12px; border-radius: 12px; font-size: 16px; }
+  .name-input { font-size: 22px; letter-spacing: -.4px; padding: 8px 12px; }
+  .title-input { font-size: 20px; padding: 8px 12px; }
+  .ed-list { gap: 10px; }
+  .ed-card { padding: 12px; border-radius: 16px; }
+  .ed-card .input { font-size: 16px; }
+  .import { padding: 2px 14px; border-radius: 16px; }
+  .import summary { padding: 10px 0; font-size: 14px; }
+
+  .note-item { padding: 12px 14px; border-radius: 14px; }
+  .note-title { font-size: 16px; }
+  .note-preview { font-size: 13px; }
+  .folder { padding: 12px 14px; border-radius: 14px; }
+  .folder-name { font-size: 15px; }
+  .folder.add { min-height: 80px; font-size: 14px; }
+  .row-btns .btn { height: 42px; font-size: 14px; }
+  .read-title { font-size: 26px; letter-spacing: -.6px; }
+  .toggle-row { padding: 12px 14px; border-radius: 14px; font-size: 15px; }
+  .preview { padding: 14px 16px; border-radius: 14px; }
+
+  .modal { padding: 20px 16px 14px; border-radius: 20px; }
+  .modal h2 { font-size: 18px; }
+  .modal-btns button { min-height: 44px; border-radius: 12px; font-size: 16px; }
+  .toast { font-size: 13px; }
+  .pdf-bottom { grid-template-columns: 42px minmax(0, 1fr) auto 42px; }
+  .pdf-bottom .btn { height: 42px; border-radius: 12px; }
+
+  .quiz-play { gap: 14px; }
+  .quiz-q { padding: 16px; gap: 8px; border-radius: 16px; }
+  .quiz-q-text { font-size: calc(19px * var(--ts)); }
+  .opts { gap: 7px; }
+  .opt { min-height: 46px; padding: 9px 12px; gap: 10px; border-radius: 12px; font-size: calc(15px * var(--ts)); }
+  .opt-key { width: 26px; height: 26px; border-radius: 7px; font-size: 12px; }
 }
 
 /* telefon položen (landscape): kartica levo, kontrole u uskoj koloni desno */
@@ -443,6 +609,9 @@ body.on-pdf .fs { display: none; }
   .done { max-width: 880px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; align-content: center; gap: 32px; }
   .big-pct { font-size: 48px; }
 
-  .pdf-bottom { grid-template-columns: 44px minmax(0, 1fr) auto 44px; padding-top: 6px; padding-bottom: max(6px, env(safe-area-inset-bottom, 0px)); }
-  .pdf-bottom .btn { height: 40px; }
+  .viewer-bottom { grid-template-columns: 44px minmax(0, 1fr) auto 44px; padding-top: 6px; padding-bottom: max(6px, env(safe-area-inset-bottom, 0px)); }
+  .viewer-bottom.img-nav { grid-template-columns: 44px 1fr 44px; }
+  .viewer-bottom .btn { height: 40px; }
+  .pdf-stack { padding: 52px 0 64px; }
+  .note-images { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 }

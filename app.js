@@ -3,7 +3,7 @@
    Pri svakom objavljivanju: povećati APP_VERSION, isti broj upisati u version.json
    i u ?v= parametre u index.html. */
 
-var APP_VERSION = 10;
+var APP_VERSION = 11;
 var STORE_KEY = 'kartice.v1';
 
 /* ---------- pomoćne funkcije ---------- */
@@ -48,9 +48,10 @@ function load() {
 var data = load();
 if (!Array.isArray(data.notes)) data.notes = [];
 if (!Array.isArray(data.folders)) data.folders = [];
+if (!Array.isArray(data.quizzes)) data.quizzes = [];
 data.notes.forEach(function (n) { if (!n.type) n.type = 'text'; if (n.folderId === undefined) n.folderId = null; });
-if (data.tab !== 'notes') data.tab = 'decks';
-data.settings = Object.assign({ font: 'system', size: 'm', lang: 'sr', reduceMotion: false, pdfDark: false }, data.settings || {});
+if (data.tab !== 'notes' && data.tab !== 'quizzes') data.tab = 'decks';
+data.settings = Object.assign({ font: 'system', size: 'm', lang: 'sr', reduceMotion: false, pdfDark: false, pdfMode: 'book' }, data.settings || {});
 setLang(data.settings.lang);
 
 var saveTimer = null;
@@ -103,7 +104,8 @@ function scheduleFileDelete(fileId) {
 function cancelFileDelete(fileId) { clearTimeout(pendingFileDeletes[fileId]); delete pendingFileDeletes[fileId]; }
 
 /* ---------- stanje ekrana (ne čuva se) ---------- */
-var ui = { screen: 'home', deckId: null, order: [], i: 0, flipped: false, dir: 'R', tick: 0, manage: false, fs: false, noteId: null, folderId: null, from: null };
+var ui = { screen: 'home', deckId: null, order: [], i: 0, flipped: false, dir: 'R', tick: 0, manage: false, fs: false, noteId: null, folderId: null, from: null,
+  quizId: null, qz: null };   // qz: tekući krug kviza { order, i, picked, right, wrong }
 var lastScreen = null, lastTick = -1;
 
 function deck() { return data.decks.find(function (d) { return d.id === ui.deckId; }) || null; }
@@ -112,6 +114,22 @@ function knownCount(d) { return d.cards.filter(function (c) { return d.known[c.i
 function unknownIds(d) { return d.cards.filter(function (c) { return !d.known[c.id]; }).map(function (c) { return c.id; }); }
 function pct(d) { return d.cards.length ? Math.round(knownCount(d) / d.cards.length * 100) : 0; }
 function cardNo(d, c) { return c.n || String(d.cards.indexOf(c) + 1); }
+
+// kviz: pitanja sa ponuđenim odgovorima; q.correct je indeks tačnog odgovora u q.options
+var LETTERS = 'ABCDEFGHIJ';
+function quiz() { return data.quizzes.find(function (z) { return z.id === ui.quizId; }) || null; }
+function qById(z, id) { return z.questions.find(function (q) { return q.id === id; }); }
+function optionList(q) { return q.options.map(function (o, i) { return { t: o.trim(), i: i }; }).filter(function (o) { return o.t; }); }
+function questionIssue(q) {
+  if (!q.q.trim()) return t('Upiši pitanje.');
+  if (optionList(q).length < 2) return t('Upiši bar dva odgovora.');
+  if (q.correct == null || !(q.options[q.correct] || '').trim()) return t('Označi tačan odgovor.');
+  return '';
+}
+function playable(z) { return z.questions.filter(function (q) { return !questionIssue(q); }); }
+function quizKnown(z) { return playable(z).filter(function (q) { return z.known[q.id]; }).length; }
+function quizPct(z) { var n = playable(z).length; return n ? Math.round(quizKnown(z) / n * 100) : 0; }
+function quizNo(z, q) { return q.n || String(z.questions.indexOf(q) + 1); }
 
 function noteById(id) {
   return BUILTIN_NOTES.find(function (x) { return x.id === id; }) || data.notes.find(function (x) { return x.id === id; }) || null;
@@ -122,6 +140,12 @@ function notesIn(folderId) {
   return data.notes.filter(function (n) { return (n.folderId || null) === (folderId || null); })
     .sort(function (a, b) { return (b.updated || 0) - (a.updated || 0); });
 }
+// svi fajlovi jedne beleške u IndexedDB: sam dokument (PDF, Word, slika) i slike dodate u tekstualnu belešku
+function noteFileIds(n) {
+  return [n.fileId].concat((n.images || []).map(function (im) { return im.fileId; })).filter(Boolean);
+}
+var IMAGE_EXT = { jpg: 1, jpeg: 1, png: 1, gif: 1, webp: 1, heic: 1, heif: 1, bmp: 1, avif: 1 };
+function isImageFile(file) { return !!IMAGE_EXT[extOf(file.name)] || /^image\//.test(file.type || ''); }
 
 var ICON = {
   back: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>',
@@ -131,7 +155,9 @@ var ICON = {
   gear: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
   folder: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
   fsOn: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>',
-  fsOff: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>'
+  fsOff: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>',
+  check: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  x: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>'
 };
 
 function seg(name, opts, current) {
@@ -149,8 +175,9 @@ function backBtn(act, label) {
 /* ---------- ekrani: početna ---------- */
 function viewHome() {
   var total = data.decks.reduce(function (s, d) { return s + d.cards.length; }, 0);
-  var n = data.decks.length;
-  if (!n) ui.manage = false;
+  var n = data.decks.length, nq = data.quizzes.length;
+  var notesTab = data.tab === 'notes', quizTab = data.tab === 'quizzes';
+  if (quizTab ? !nq : !n) ui.manage = false;
   var noName = t('Bez naziva');
   var list = data.decks.map(function (d) {
     var p = pct(d);
@@ -162,20 +189,21 @@ function viewHome() {
     return '<button class="deck" data-act="open" data-arg="' + d.id + '">' +
       '<span class="deck-name">' + esc(d.name || noName) + '</span>' + meta + bar(p, 'thin') + '</button>';
   }).join('');
-  var notesTab = data.tab === 'notes';
   var nn = BUILTIN_NOTES.length + data.notes.length;
+  var totalQ = data.quizzes.reduce(function (s, z) { return s + playable(z).length; }, 0);
   var sub = notesTab
     ? (nn ? nn + ' ' + pw(nn, 'beleška') + (data.folders.length ? ' · ' + data.folders.length + ' ' + pw(data.folders.length, 'folder') : '') : t('Nemaš nijednu belešku.'))
+    : quizTab ? (nq ? nq + ' ' + pw(nq, 'kviz') + ' · ' + totalQ + ' ' + pw(totalQ, 'pitanje') : t('Nemaš nijedan kviz. Napravi prvi.'))
     : (n ? n + ' ' + pw(n, 'špil') + ' · ' + total + ' ' + pw(total, 'kartica') : t('Nemaš nijedan špil. Napravi prvi.'));
   return '<div class="screen home">' +
     '<div class="head"><span class="eyebrow">' + t('Učenje kartica') + '</span>' +
     '<div class="head-row"><h1>' + t('Kartice') + '</h1><div class="head-actions">' +
-      (!notesTab && n ? '<button class="link" data-act="manage">' + (ui.manage ? t('Gotovo') : t('Izmeni')) + '</button>' : '') +
+      (!notesTab && (quizTab ? nq : n) ? '<button class="link" data-act="manage">' + (ui.manage ? t('Gotovo') : t('Izmeni')) + '</button>' : '') +
       '<button class="icon-btn" data-act="settings" aria-label="' + esc(t('Podešavanja')) + '" title="' + esc(t('Podešavanja')) + '">' + ICON.gear + '</button>' +
     '</div></div>' +
     '<span class="sub num">' + sub + '</span></div>' +
-    seg('tab', [['decks', t('Špilovi')], ['notes', t('Beleške')]], data.tab) +
-    (notesTab ? viewNotesRoot()
+    seg('tab', [['decks', t('Špilovi')], ['quizzes', t('Kvizovi')], ['notes', t('Beleške')]], data.tab) +
+    (notesTab ? viewNotesRoot() : quizTab ? quizList()
       : '<div class="decks">' + list + (ui.manage ? '' : '<button class="deck add-deck btn" data-act="newDeck">' + t('+ Novi špil') + '</button>') + '</div>') +
     '<div class="spacer"></div>' +
     '<div class="field"><span class="label">' + t('Tema') + '</span>' + themeSeg() + '</div>' +
@@ -186,37 +214,50 @@ function themeSeg() {
 }
 
 /* ---------- ekrani: beleške i folderi ---------- */
-var FILE_ACCEPT = '.txt,.pdf,.docx,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+var FILE_ACCEPT = '.txt,.pdf,.docx,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*';
 
 function plainPreview(text) {
   var line = String(text || '').split('\n').map(function (l) { return l.replace(/^#+\s*|^[-•*]\s+/, '').trim(); })
     .filter(function (l) { return l; })[0];
   return line || t('Prazna beleška');
 }
+function bgImage(dataUrl) { return dataUrl ? ' style="background-image:url(&quot;' + esc(dataUrl) + '&quot;)"' : ''; }
 function noteItem(x, opts) {
   opts = opts || {};
   var builtin = isBuiltin(x.id);
+  var imgs = (x.images || []).length;
   var badge = builtin ? '<span class="badge">' + t('Materijal') + '</span>'
     : x.type === 'pdf' ? '<span class="badge pdf">PDF</span>'
-    : x.type === 'docx' ? '<span class="badge docx">DOCX</span>' : '';
+    : x.type === 'docx' ? '<span class="badge docx">DOCX</span>'
+    : x.type === 'image' ? '<span class="badge img">' + t('Slika') + '</span>' : '';
   var preview = x.type === 'pdf' ? (x.pages ? x.pages + ' ' + pw(x.pages, 'strana') : t('PDF dokument')) + (x.lastPage > 1 ? ' · ' + t('stao si na {n}. strani', { n: x.lastPage }) : '')
     : x.type === 'docx' ? t('Word dokument') + (x.size ? ' · ' + fmtSize(x.size) : '')
+    : x.type === 'image' ? (x.w ? x.w + ' × ' + x.h + ' · ' : '') + fmtSize(x.size)
     : plainPreview(x.body);
   var folder = opts.showFolder && x.folderId && folderById(x.folderId);
-  return '<button class="note-item" data-act="openNote" data-arg="' + x.id + '">' +
-    '<span class="note-title">' + esc(x.title || t('Bez naslova')) + '</span>' +
+  var text = '<span class="note-title">' + esc(x.title || t('Bez naslova')) + '</span>' +
     '<span class="note-preview">' + esc(preview) + '</span>' +
     '<span class="note-meta">' + badge + (builtin ? (x.subject ? '<span>' + esc(x.subject) + '</span>' : '') : '<span>' + esc(fmtDate(x.updated)) + '</span>') +
-      (folder ? '<span>· ' + esc(folder.name) + '</span>' : '') + '</span>' +
-    '</button>';
+      (imgs ? '<span>· ' + imgs + ' ' + pw(imgs, 'slika') + '</span>' : '') +
+      (folder ? '<span>· ' + esc(folder.name) + '</span>' : '') + '</span>';
+  // slika ili tekstualna beleška sa slikama dobija sličicu desno
+  if (x.type === 'image' || imgs) {
+    var thumb = x.type === 'image' ? x.thumb : x.images[0].thumb;
+    return '<button class="note-item has-thumb" data-act="openNote" data-arg="' + x.id + '"><span class="note-text">' + text + '</span>' +
+      '<span class="mini"' + bgImage(thumb) + '></span></button>';
+  }
+  return '<button class="note-item" data-act="openNote" data-arg="' + x.id + '">' + text + '</button>';
 }
 function noteList(arr, opts) {
   return '<div class="note-list">' + arr.map(function (x) { return noteItem(x, opts); }).join('') + '</div>';
 }
 function addButtons(folderId) {
-  return '<div class="row-btns"><button class="btn add-deck" data-act="newNote" data-arg="' + (folderId || '') + '">' + t('+ Nova beleška') + '</button>' +
-    '<button class="btn" data-act="importFile" data-arg="' + (folderId || '') + '">' + t('Uvezi fajl') + '</button></div>' +
-    '<input type="file" id="noteFile" accept="' + FILE_ACCEPT + '" multiple hidden>';
+  var f = folderId || '';
+  return '<button class="btn add-deck" data-act="newNote" data-arg="' + f + '" style="height:48px;font-size:15px">' + t('+ Nova beleška') + '</button>' +
+    '<div class="add-row"><button class="btn" data-act="importFile" data-arg="' + f + '">' + t('Uvezi fajl') + '</button>' +
+    '<button class="btn" data-act="addImage" data-arg="' + f + '">' + t('Dodaj sliku') + '</button></div>' +
+    '<input type="file" id="noteFile" accept="' + FILE_ACCEPT + '" multiple hidden>' +
+    '<input type="file" id="imageFile" accept="image/*" multiple hidden>';
 }
 function viewNotesRoot() {
   var root = notesIn(null);
@@ -232,7 +273,7 @@ function viewNotesRoot() {
         '<button class="folder add" data-act="newFolder">' + t('+ Novi folder') + '</button></div></div>' +
       (BUILTIN_NOTES.length ? '<div class="section"><span class="label">' + t('Materijali') + '</span>' + noteList(BUILTIN_NOTES) + '</div>' : '') +
       '<div class="section"><span class="label">' + t('Beleške van foldera') + '</span>' +
-        (root.length ? noteList(root) : '<p class="empty-note">' + t('Ovde nema beleški. Napiši novu ili uvezi .txt, PDF ili Word (.docx) fajl.') + '</p>') +
+        (root.length ? noteList(root) : '<p class="empty-note">' + t('Ovde nema beleški. Napiši novu, uvezi .txt, PDF ili Word (.docx) fajl, ili dodaj sliku.') + '</p>') +
         addButtons(null) +
       '</div>' +
     '</div>' +
@@ -289,18 +330,29 @@ function viewNoteRead() {
 }
 function viewNoteEdit() {
   var x = noteById(ui.noteId);
+  var imgs = x.images || [];
   return '<div class="screen note-edit">' +
     '<div class="topbar">' + backBtn('backFromNote', backLabel()) + noteActions(x) + '</div>' +
     '<input class="input title-input" id="noteTitle" data-note="title" value="' + esc(x.title) + '" placeholder="' + esc(t('Naslov')) + '" aria-label="' + esc(t('Naslov beleške')) + '" autocomplete="off">' +
     '<textarea class="input note-body" id="noteBody" data-note="body" placeholder="' + esc(t('Piši ovde…')) + '" aria-label="' + esc(t('Tekst beleške')) + '">' + esc(x.body) + '</textarea>' +
+    '<div class="section"><span class="label">' + t('Slike') + (imgs.length ? ' (' + imgs.length + ')' : '') + '</span>' +
+      '<div class="note-images">' + imgs.map(function (im, i) {
+        return '<button class="thumb" data-act="openImage" data-arg="' + im.fileId + '" aria-label="' + esc(t('Slika {i} od {n}', { i: i + 1, n: imgs.length })) + '"' + bgImage(im.thumb) + '></button>';
+      }).join('') +
+      '<button class="thumb add" data-act="addNoteImage">' + t('+ Slika') + '</button></div>' +
+      '<input type="file" id="noteImageFile" accept="image/*" multiple hidden>' +
+    '</div>' +
     '<div class="note-foot"><span id="noteSaved">' + t('Sačuvano automatski · {d}', { d: fmtDate(x.updated) }) + '</span>' +
     '<button class="link danger" data-act="delNote">' + t('Obriši belešku') + '</button></div>' +
     '</div>';
 }
+function moreBtn(act) {
+  return '<button class="icon-btn" data-act="' + act + '" aria-label="' + esc(t('Opcije')) + '">' + ICON.more + '</button>';
+}
 function viewDocx() {
   var x = noteById(ui.noteId);
   return '<div class="screen doc-read">' +
-    '<div class="topbar">' + backBtn('backFromNote', backLabel()) + noteActions(x) + '</div>' +
+    '<div class="topbar">' + backBtn('backFromNote', backLabel()) + moreBtn('docMenu') + '</div>' +
     '<div class="head" style="padding-top:0"><span class="eyebrow">' + t('Word dokument') + (x.size ? ' · ' + fmtSize(x.size) : '') + '</span>' +
     '<h1 class="read-title">' + esc(x.title) + '</h1></div>' +
     '<div class="reader" id="docxBody"><p class="empty-note">' + t('Učitavam dokument…') + '</p></div>' +
@@ -310,17 +362,38 @@ function viewDocx() {
 function viewPdf() {
   var x = noteById(ui.noteId);
   var n = x.pages || 1, cur = Math.min(x.lastPage || 1, n);
-  return '<div class="screen pdf-screen">' +
-    '<div class="topbar pdf-top">' + backBtn('backFromNote', backLabel()) +
-      '<span class="pdf-title">' + esc(x.title) + '</span>' +
-      '<button class="icon-btn" data-act="pdfMenu" aria-label="' + esc(t('Opcije')) + '">' + ICON.more + '</button></div>' +
-    '<div class="book-wrap' + (data.settings.pdfDark ? ' dark-pages' : '') + '" id="bookWrap"><span class="book-loading">' + t('Učitavam PDF…') + '</span></div>' +
-    '<div class="pdf-bottom">' +
+  var scroll = data.settings.pdfMode === 'scroll';
+  return '<div class="screen viewer pdf-screen">' +
+    '<div class="topbar viewer-top">' + backBtn('backFromNote', backLabel()) +
+      '<span class="viewer-title">' + esc(x.title) + '</span>' + moreBtn('pdfMenu') + '</div>' +
+    '<div class="viewer-area' + (scroll ? ' zoomable' : '') + (data.settings.pdfDark ? ' dark-pages' : '') + '" id="bookWrap"><span class="viewer-loading">' + t('Učitavam PDF…') + '</span></div>' +
+    '<div class="viewer-bottom">' +
       '<button class="btn" data-act="pdfPrev" aria-label="' + esc(t('Prethodna strana')) + '">' + ICON.prev + '</button>' +
       '<input type="range" id="pdfRange" min="1" max="' + n + '" value="' + cur + '" aria-label="' + esc(t('Strana')) + '">' +
-      '<span class="pdf-count" id="pdfCount">' + cur + ' / ' + n + '</span>' +
+      '<span class="viewer-count" id="pdfCount">' + cur + ' / ' + n + '</span>' +
       '<button class="btn" data-act="pdfNext" aria-label="' + esc(t('Sledeća strana')) + '">' + ICON.next + '</button>' +
     '</div></div>';
+}
+// slika koja se prikazuje: samostalna beleška-slika ili jedna od slika u tekstualnoj belešci
+function currentImage() {
+  var x = noteById(ui.noteId); if (!x) return null;
+  if (x.type === 'image') return { fileId: x.fileId, title: x.title, list: null };
+  var list = x.images || [];
+  var i = list.findIndex(function (im) { return im.fileId === ui.imgId; });
+  return i < 0 ? null : { fileId: list[i].fileId, title: x.title || t('Bez naslova'), list: list, i: i };
+}
+function viewImage() {
+  var x = noteById(ui.noteId), c = currentImage();
+  var title = c.list ? t('Slika {i} od {n}', { i: c.i + 1, n: c.list.length }) : x.title;
+  return '<div class="screen viewer img-screen">' +
+    '<div class="topbar viewer-top">' + (c.list ? backBtn('backToNote', x.title || t('Beleška')) : backBtn('backFromNote', backLabel())) +
+      '<span class="viewer-title">' + esc(title) + '</span>' + moreBtn('imgMenu') + '</div>' +
+    '<div class="viewer-area zoomable" id="imgArea"><div class="img-stage"><span class="viewer-loading">' + t('Učitavam sliku…') + '</span></div></div>' +
+    (c.list && c.list.length > 1 ? '<div class="viewer-bottom img-nav">' +
+      '<button class="btn" data-act="imgPrev" aria-label="' + esc(t('Prethodna slika')) + '"' + (c.i === 0 ? ' disabled' : '') + '>' + ICON.prev + '</button>' +
+      '<span class="viewer-count">' + (c.i + 1) + ' / ' + c.list.length + '</span>' +
+      '<button class="btn" data-act="imgNext" aria-label="' + esc(t('Sledeća slika')) + '"' + (c.i === c.list.length - 1 ? ' disabled' : '') + '>' + ICON.next + '</button></div>' : '') +
+    '</div>';
 }
 
 /* ---------- ekrani: špil, učenje, kraj, uređivanje ---------- */
@@ -431,6 +504,147 @@ function viewEdit() {
     '</div>';
 }
 
+/* ---------- ekrani: kvizovi (pitanja sa ponuđenim odgovorima) ---------- */
+function quizList() {
+  var noName = t('Bez naziva');
+  var list = data.quizzes.map(function (z) {
+    var n = playable(z).length, p = quizPct(z);
+    var meta = '<span class="deck-meta">' + n + ' ' + pw(n, 'pitanje') + ' · ' + t('{p}% naučeno', { p: p }) + '</span>';
+    if (ui.manage) {
+      return '<div class="deck managed"><div class="deck-info"><span class="deck-name">' + esc(z.name || noName) + '</span>' + meta + '</div>' +
+        '<button class="del-btn" data-act="delQuiz" data-arg="' + z.id + '">' + t('Obriši') + '</button></div>';
+    }
+    return '<button class="deck" data-act="openQuiz" data-arg="' + z.id + '">' +
+      '<span class="deck-name">' + esc(z.name || noName) + '</span>' + meta + bar(p, 'thin') + '</button>';
+  }).join('');
+  return (data.quizzes.length ? '' : '<p class="empty-note">' + t('Kviz ima pitanja sa ponuđenim odgovorima. Napravi novi kviz, pa unesi pitanja jedno po jedno ili ih nalepi iz teksta.') + '</p>') +
+    '<div class="decks">' + list + (ui.manage ? '' : '<button class="deck add-deck btn" data-act="newQuiz">' + t('+ Novi kviz') + '</button>') + '</div>';
+}
+function viewQuiz() {
+  var z = quiz();
+  var total = playable(z).length, kc = quizKnown(z), unk = total - kc, p = quizPct(z);
+  var unfinished = z.questions.length - total;
+  return '<div class="screen deck-wide">' +
+    '<div class="topbar">' + backBtn('toQuizzes', t('Kvizovi')) + '</div>' +
+    '<div class="deck-menu">' +
+      '<div class="col">' +
+        '<div class="head" style="padding-top:0"><span class="eyebrow">' + esc(z.tag || t('Kviz')) + '</span><h1>' + esc(z.name || t('Bez naziva')) + '</h1>' +
+        '<span class="sub num">' + total + ' ' + pw(total, 'pitanje') + '</span></div>' +
+        '<div class="panel"><div class="row-between"><span style="font-size:15px;color:var(--muted)">' + t('Naučeno') + '</span>' +
+        '<span style="font-size:15px"><b style="font-weight:600">' + p + '%</b><span style="color:var(--muted)"> · ' + kc + ' / ' + total + '</span></span></div>' + bar(p) + '</div>' +
+      '</div>' +
+      '<div class="col">' +
+        '<div class="field"><span class="label">' + t('Redosled') + '</span>' + seg('order', [['seq', t('Po redu')], ['rnd', t('Nasumično')]], data.random ? 'rnd' : 'seq') + '</div>' +
+        '<div class="stack">' +
+          (z.questions.length === 0 ? '<p class="sub" style="margin:0;font-size:15px">' + t('Kviz je prazan. Dodaj prva pitanja.') + '</p>' : '') +
+          (unfinished ? '<p class="small-note">' + t('Nedovršenih pitanja: {n}. Dovrši ih u izmeni da bi ušla u kviz.', { n: unfinished }) + '</p>' : '') +
+          '<button class="btn primary" data-act="startQuiz"' + (total ? '' : ' disabled') + '>' + t('Počni kviz') + '</button>' +
+          (kc > 0 && unk > 0 ? '<button class="btn" data-act="startQuizUnknown">' + t('Samo nenaučena ({n})', { n: unk }) + '</button>' : '') +
+          '<button class="btn" data-act="editQuiz">' + (z.questions.length ? t('Izmeni pitanja') : t('Dodaj pitanja')) + '</button>' +
+          '<div style="display:flex;justify-content:center;flex-wrap:wrap;gap:4px 16px">' +
+            (kc > 0 ? '<button class="link" data-act="resetQuiz">' + t('Resetuj napredak') + '</button>' : '') +
+            '<button class="link danger" data-act="delQuiz">' + t('Obriši kviz') + '</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+    '</div></div>';
+}
+function viewQuizPlay() {
+  var z = quiz(), s = ui.qz, q = qById(z, s.order[s.i]);
+  var opts = optionList(q), answered = s.picked !== null;
+  var anim = ui.tick !== lastTick ? ' in-R' : '';
+  var rightLetter = LETTERS[opts.findIndex(function (o) { return o.i === q.correct; })];
+  var top = '<div class="study-top">' +
+    '<div class="topbar">' + backBtn('toQuiz', t('Meni')) +
+    '<span class="num" style="font-size:15px;color:var(--muted)">' + (s.i + 1) + ' / ' + s.order.length + '</span></div>' +
+    '<div class="bar hair"><span style="width:' + ((s.i + (answered ? 1 : 0)) / s.order.length * 100) + '%"></span></div>' +
+    '<div class="known-row"><span>' + t('Tačno') + ' <b>' + s.right + '</b></span><span>' + t('Netačno') + ' <b>' + s.wrong.length + '</b></span></div>' +
+    '</div>';
+  var body = '<div class="quiz-body">' +
+    '<div class="quiz-q' + anim + '"><span class="eyebrow">' + t('Pitanje {n}', { n: esc(quizNo(z, q)) }) + '</span>' +
+      '<span class="quiz-q-text">' + esc(q.q) + '</span></div>' +
+    '<div class="opts' + anim + '">' + opts.map(function (o, k) {
+      var cls = 'opt';
+      if (answered) cls += o.i === q.correct ? ' right' : o.i === s.picked ? ' wrong' : ' dim';
+      return '<button class="' + cls + '" data-act="pick" data-arg="' + o.i + '"' + (answered ? ' disabled' : '') + '>' +
+        '<span class="opt-key">' + (answered && o.i === q.correct ? ICON.check : answered && o.i === s.picked ? ICON.x : LETTERS[k]) + '</span>' +
+        '<span class="opt-text">' + esc(o.t) + '</span></button>';
+    }).join('') + '</div></div>';
+  var last = s.i + 1 >= s.order.length;
+  var actions = answered
+    ? '<div class="quiz-actions">' +
+        '<p class="quiz-fb ' + (s.picked === q.correct ? 'good">' + t('Tačno!') : 'bad">' + (s.picked < 0 ? '' : t('Netačno.') + ' ') + t('Tačan odgovor je {l}.', { l: rightLetter })) + '</p>' +
+        '<button class="btn primary" data-act="nextQ">' + (last ? t('Završi kviz') : t('Sledeće pitanje')) + '</button></div>'
+    : '<div class="quiz-actions"><button class="btn" data-act="dontKnow">' + t('Ne znam, prikaži odgovor') + '</button></div>';
+  var keys = '<div class="keys">' + (answered
+    ? '<span><kbd>Enter</kbd> ' + t('dalje') + '</span><span><kbd>Esc</kbd> ' + t('meni') + '</span>'
+    : '<span><kbd>1</kbd>–<kbd>' + opts.length + '</kbd> ' + t('odgovor') + '</span><span><kbd>Esc</kbd> ' + t('meni') + '</span>') + '</div>';
+  return '<div class="screen quiz-play">' + top + body + actions + keys + '</div>';
+}
+function viewQuizDone() {
+  var z = quiz(), s = ui.qz, total = s.order.length;
+  var p = total ? Math.round(s.right / total * 100) : 0;
+  var all = playable(z).length, unk = all - quizKnown(z);
+  var mistakes = s.wrong.map(function (id) { return qById(z, id); }).filter(Boolean).map(function (q) {
+    var right = q.options[q.correct] || '';
+    return '<div class="mistake"><b>' + esc(q.q) + '</b><span>' + ICON.check + esc(right) + '</span></div>';
+  }).join('');
+  return '<div class="screen quiz-done">' +
+    '<div class="spacer"></div>' +
+    '<div style="display:flex;flex-direction:column;gap:8px">' +
+      '<span class="eyebrow">' + t('Kviz završen') + '</span><span class="big-pct num">' + s.right + ' / ' + total + '</span>' +
+      '<span class="sub">' + t('Tačno {p}% odgovora.', { p: p }) + ' ' + (unk === 0 ? t('Znaš sva pitanja.') : t('Nenaučenih pitanja u kvizu: {n}.', { n: unk })) + '</span>' +
+      '<div style="margin-top:8px">' + bar(p) + '</div>' +
+    '</div>' +
+    (mistakes ? '<div class="section"><span class="label">' + t('Greške ({n})', { n: s.wrong.length }) + '</span><div class="mistakes">' + mistakes + '</div></div>' : '') +
+    '<div class="stack">' +
+      (s.wrong.length ? '<button class="btn primary" data-act="retryWrong">' + t('Ponovi netačne ({n})', { n: s.wrong.length }) + '</button>' : '') +
+      '<button class="btn' + (s.wrong.length ? '' : ' primary') + '" data-act="startQuiz">' + t('Ponovi ceo kviz') + '</button>' +
+      '<button class="btn" data-act="toQuiz">' + t('Glavni meni') + '</button>' +
+    '</div>' +
+    '<div class="spacer"></div>' +
+    '</div>';
+}
+function viewQuizEdit() {
+  var z = quiz();
+  var list = z.questions.map(function (q) {
+    var opts = q.options.map(function (o, k) {
+      var ok = q.correct === k;
+      return '<div class="ed-opt' + (ok ? ' ok' : '') + '">' +
+        '<button class="mark" data-act="markRight" data-arg="' + q.id + ':' + k + '" aria-pressed="' + ok + '" aria-label="' + esc(t('Tačan odgovor {l}', { l: LETTERS[k] })) + '">' + (ok ? ICON.check : '') + '</button>' +
+        '<input class="input" id="o-' + q.id + '-' + k + '" data-qopt="' + k + '" data-id="' + q.id + '" value="' + esc(o) + '" placeholder="' + esc(t('Odgovor {l}', { l: LETTERS[k] })) + '" aria-label="' + esc(t('Odgovor {l}', { l: LETTERS[k] })) + '" autocomplete="off">' +
+        '<button class="icon-btn opt-del" data-act="delOpt" data-arg="' + q.id + ':' + k + '" aria-label="' + esc(t('Ukloni odgovor {l}', { l: LETTERS[k] })) + '">' + ICON.x + '</button>' +
+        '</div>';
+    }).join('');
+    return '<div class="ed-card">' +
+      '<div class="ed-top"><span class="eyebrow">' + t('Pitanje {n}', { n: esc(quizNo(z, q)) }) + '</span>' +
+      '<button class="link danger" data-act="delQuestion" data-arg="' + q.id + '">' + t('Obriši') + '</button></div>' +
+      '<textarea class="input ed-q" id="qq-' + q.id + '" data-qq="1" data-id="' + q.id + '" rows="1" placeholder="' + esc(t('Pitanje')) + '" aria-label="' + esc(t('Pitanje')) + '">' + esc(q.q) + '</textarea>' +
+      '<div class="ed-opts">' + opts + '</div>' +
+      '<div class="ed-foot">' +
+        (q.options.length < LETTERS.length ? '<button class="link" data-act="addOpt" data-arg="' + q.id + '">' + t('+ Dodaj odgovor') + '</button>' : '<span></span>') +
+        '<span class="ed-warn" id="qw-' + q.id + '">' + esc(questionIssue(q)) + '</span></div>' +
+      '</div>';
+  }).join('');
+  return '<div class="screen edit">' +
+    '<div class="topbar">' + backBtn('toQuiz', t('Gotovo')) +
+    '<button class="link" data-act="exportQuiz"' + (z.questions.length ? '' : ' disabled') + '>' + t('Kopiraj kao tekst') + '</button></div>' +
+    '<div class="field"><label class="label" for="quizName">' + t('Naziv kviza') + '</label>' +
+    '<input class="input name-input" id="quizName" data-quiz="name" value="' + esc(z.name) + '" placeholder="' + esc(t('Naziv kviza')) + '" autocomplete="off"></div>' +
+    '<div class="field"><label class="label" for="quizTag">' + t('Podnaslov') + '</label>' +
+    '<input class="input" id="quizTag" data-quiz="tag" value="' + esc(z.tag || '') + '" placeholder="' + esc(t('npr. Pitanja za test')) + '" autocomplete="off"></div>' +
+    '<details class="import"' + (z.questions.length ? '' : ' open') + '><summary>' + t('Uvezi više pitanja iz teksta') + '</summary><div class="body">' +
+      '<p>' + t('Nalepi tekst. Pitanja odvoji praznim redom: prvi red je pitanje, ostali redovi su ponuđeni odgovori. Tačan odgovor označi zvezdicom (*) na početku reda.') + '</p>' +
+      '<textarea class="input" id="quizImportText" rows="7" placeholder="' + esc(t('Koji uređaj povezuje različite mreže?\nSvič\n*Ruter\nHab\n\nKoliko bitova ima jedan bajt?\n4\n*8\n16')) + '"></textarea>' +
+      '<button class="btn small primary" data-act="importQuiz">' + t('Dodaj pitanja') + '</button>' +
+    '</div></details>' +
+    '<div class="row-between"><span class="label">' + t('Pitanja ({n})', { n: z.questions.length }) + '</span>' +
+      (z.questions.length ? '<span class="label">' + t('Krug označava tačan odgovor') + '</span>' : '') + '</div>' +
+    '<div class="ed-list">' + list + '</div>' +
+    '<button class="btn add-deck" data-act="addQuestion">' + t('+ Novo pitanje') + '</button>' +
+    '</div>';
+}
+
 /* ---------- ekran: podešavanja ---------- */
 function toggleRow(key, label, note) {
   var on = !!data.settings[key];
@@ -456,6 +670,8 @@ function viewSettings() {
     '</div>' +
     '<div class="section"><h2>' + t('Učenje i čitanje') + '</h2>' +
       toggleRow('reduceMotion', t('Smanji animacije'), t('Kartice i stranice se menjaju bez pokreta.')) +
+      '<div class="field"><span class="label">' + t('PDF prikaz') + '</span>' +
+        seg('setPdfMode', [['book', t('Listanje kao knjiga')], ['scroll', t('Skrolovanje')]], s.pdfMode) + '</div>' +
       toggleRow('pdfDark', t('Tamne PDF stranice'), t('PDF se prikazuje sa tamnom pozadinom i svetlim tekstom.')) +
     '</div>' +
     '<div class="section"><h2>' + t('Podaci') + '</h2>' +
@@ -474,7 +690,8 @@ function viewSettings() {
 /* ---------- prikaz ---------- */
 var app = document.getElementById('app');
 var VIEWS = { home: viewHome, deck: viewDeck, cards: viewStudy, done: viewDone, edit: viewEdit, folder: viewFolder,
-  noteRead: viewNoteRead, noteEdit: viewNoteEdit, docx: viewDocx, pdf: viewPdf, settings: viewSettings };
+  noteRead: viewNoteRead, noteEdit: viewNoteEdit, docx: viewDocx, pdf: viewPdf, image: viewImage, settings: viewSettings,
+  quiz: viewQuiz, quizPlay: viewQuizPlay, quizDone: viewQuizDone, quizEdit: viewQuizEdit };
 
 function applyTheme() {
   var b = document.body, s = data.settings;
@@ -490,18 +707,21 @@ function applyTheme() {
   if (meta) meta.setAttribute('content', getComputedStyle(b).getPropertyValue('--bg').trim() || '#1C1B1A');
 }
 function render(keepScroll) {
-  if (ui.screen !== 'pdf' || lastScreen !== 'pdf') destroyBook();
+  destroyViewer();
   // ekran čiji podaci više ne postoje vraća na početnu
   if ((ui.screen === 'folder' && !folderById(ui.folderId)) ||
-      (/^(noteRead|noteEdit|docx|pdf)$/.test(ui.screen) && !noteById(ui.noteId)) ||
-      (/^(deck|cards|done|edit)$/.test(ui.screen) && !deck())) ui.screen = 'home';
+      (/^(noteRead|noteEdit|docx|pdf|image)$/.test(ui.screen) && !noteById(ui.noteId)) ||
+      (/^(deck|cards|done|edit)$/.test(ui.screen) && !deck()) ||
+      (/^quiz/.test(ui.screen) && !quiz())) ui.screen = 'home';
+  if (ui.screen === 'image' && !currentImage()) ui.screen = 'noteEdit';
+  if (/^quiz(Play|Done)$/.test(ui.screen) && !ui.qz) ui.screen = 'quiz';
   applyTheme();
   document.body.classList.toggle('has-fs', !!document.fullscreenEnabled);
-  document.body.classList.toggle('on-pdf', ui.screen === 'pdf');
+  document.body.classList.toggle('on-viewer', ui.screen === 'pdf' || ui.screen === 'image');
   var cur = app.querySelector('.screen');
   var prevScroll = keepScroll && cur ? cur.scrollTop : 0;
   var html = VIEWS[ui.screen]();
-  if (ui.screen !== lastScreen && ui.screen !== 'cards') html = html.replace('class="screen', 'class="screen enter');
+  if (ui.screen !== lastScreen && ui.screen !== 'cards' && ui.screen !== 'quizPlay') html = html.replace('class="screen', 'class="screen enter');
   var fsLabel = esc(ui.fs ? t('Izađi iz celog ekrana') : t('Ceo ekran'));
   var fsBtn = document.fullscreenEnabled
     ? '<button class="fs" data-act="fs" aria-label="' + fsLabel + '" title="' + fsLabel + '">' + (ui.fs ? ICON.fsOff : ICON.fsOn) + '</button>' : '';
@@ -510,8 +730,9 @@ function render(keepScroll) {
   app.querySelectorAll('textarea').forEach(autosize);
   if (keepScroll) app.querySelector('.screen').scrollTop = prevScroll;
   lastScreen = ui.screen;
-  if (ui.screen === 'cards') lastTick = ui.tick;
+  if (ui.screen === 'cards' || ui.screen === 'quizPlay') lastTick = ui.tick;
   if (ui.screen === 'pdf') mountPdf();
+  if (ui.screen === 'image') mountImage();
   if (ui.screen === 'docx') mountDocx();
   if (ui.screen === 'settings') fillStorageInfo();
   if (pendingUpdate) setTimeout(applyUpdate, 0);
@@ -629,23 +850,102 @@ function parseImport(text) {
     return { q: ls[0].trim(), a: ls.slice(1).join('\n').trim() };
   }).filter(function (c) { return c.q; });
 }
-function nextNo(d) {
+// najveći redni broj u listi kartica ili pitanja
+function nextNo(list) {
   var max = 0;
-  d.cards.forEach(function (c) { var x = parseInt(c.n, 10); if (x > max) max = x; });
-  return Math.max(max, d.cards.length);
+  list.forEach(function (c) { var x = parseInt(c.n, 10); if (x > max) max = x; });
+  return Math.max(max, list.length);
 }
+
+/* ---------- kvizovi ---------- */
+function askDeleteQuiz(id) {
+  var z = data.quizzes.find(function (x) { return x.id === id; });
+  if (!z) return;
+  modal({
+    title: t('Obrisati kviz?'),
+    text: t('Da li ste sigurni da hoćete da obrišete kviz „{name}“? Biće obrisana sva pitanja i napredak u njemu.', { name: z.name || t('Bez naziva') }),
+    buttons: [{ label: t('Obriši kviz'), kind: 'danger', onClick: function () { deleteQuiz(id); } }, { label: t('Nemoj da brišeš'), kind: 'cancel' }]
+  });
+}
+function deleteQuiz(id) {
+  var idx = data.quizzes.findIndex(function (z) { return z.id === id; });
+  if (idx < 0) return;
+  var removed = data.quizzes.splice(idx, 1)[0];
+  save();
+  ui.screen = 'home'; data.tab = 'quizzes'; render(true);
+  toast(t('Kviz „{name}“ je obrisan', { name: removed.name || t('Bez naziva') }), t('Vrati'), function () {
+    data.quizzes.splice(Math.min(idx, data.quizzes.length), 0, removed);
+    save(); if (ui.screen === 'home') render(true);
+  });
+}
+function beginQuiz(ids) {
+  var z = quiz(), ok = playable(z).map(function (q) { return q.id; });
+  ids = ids.filter(function (id) { return ok.indexOf(id) >= 0; });
+  if (!ids.length) return;
+  ui.qz = { order: data.random ? shuffled(ids) : ids, i: 0, picked: null, right: 0, wrong: [] };
+  ui.tick++; ui.screen = 'quizPlay';
+  render();
+}
+// idx je indeks izabranog odgovora; -1 znači "Ne znam"
+function pick(idx) {
+  var s = ui.qz; if (!s || s.picked !== null) return;
+  var z = quiz(), q = qById(z, s.order[s.i]);
+  s.picked = idx;
+  if (idx === q.correct) { s.right++; z.known[q.id] = true; }
+  else { s.wrong.push(q.id); delete z.known[q.id]; }
+  save(); render(true);
+}
+function nextQuestion() {
+  var s = ui.qz; if (!s || s.picked === null) return;
+  if (s.i + 1 >= s.order.length) { ui.screen = 'quizDone'; render(); return; }
+  s.i++; s.picked = null; ui.tick++;
+  render();
+}
+function pickByKey(n) {
+  var z = quiz(), q = qById(z, ui.qz.order[ui.qz.i]);
+  var o = optionList(q)[n];
+  if (o) pick(o.i);
+}
+/* Uvoz: pitanja odvojena praznim redom, prvi red pitanje, ostali ponuđeni odgovori.
+   Tačan odgovor ima * (ili +, ✓) na početku; oznake "a)", "B." i brojevi pitanja se uklanjaju. */
+function parseQuizImport(text) {
+  text = text.replace(/\r\n?/g, '\n').trim();
+  if (!text) return [];
+  var MARK = /^(\*|\+|✓|✔)\s*/, LETTER = /^[a-jA-J][.)]\s+/;
+  return text.split(/\n\s*\n/).map(function (b) {
+    var ls = b.split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
+    if (ls.length < 2) return null;
+    var correct = null;
+    var options = ls.slice(1).map(function (l, k) {
+      var marked = MARK.test(l);
+      l = l.replace(MARK, '').replace(LETTER, '');
+      if (MARK.test(l)) { marked = true; l = l.replace(MARK, ''); }
+      if (marked && correct === null) correct = k;
+      return l;
+    });
+    return { q: ls[0].replace(/^\d+\s*[.)]\s*/, ''), options: options, correct: correct };
+  }).filter(Boolean);
+}
+function quizToText(z) {
+  return z.questions.map(function (q) {
+    return [q.q.replace(/\n+/g, ' ')].concat(q.options.map(function (o, k) {
+      return o.trim() ? (k === q.correct ? '*' : '') + o.trim() : '';
+    }).filter(Boolean)).join('\n');
+  }).join('\n\n');
+}
+function splitArg(v) { var k = v.lastIndexOf(':'); return { q: qById(quiz(), v.slice(0, k)), k: +v.slice(k + 1) }; }
 
 /* ---------- beleške, fajlovi i folderi ---------- */
 function openNote(id, from) {
   var x = noteById(id); if (!x) return;
   ui.noteId = id; ui.from = from === undefined ? (x.folderId || null) : from;
-  ui.screen = isBuiltin(id) ? 'noteRead' : x.type === 'pdf' ? 'pdf' : x.type === 'docx' ? 'docx' : 'noteEdit';
+  ui.screen = isBuiltin(id) ? 'noteRead' : x.type === 'pdf' ? 'pdf' : x.type === 'docx' ? 'docx' : x.type === 'image' ? 'image' : 'noteEdit';
   render();
 }
 function backFromNote() {
   var x = data.notes.find(function (n) { return n.id === ui.noteId; });
-  // prazna tekstualna beleška se ne čuva
-  if (x && x.type === 'text' && !x.title.trim() && !x.body.trim()) { data.notes = data.notes.filter(function (n) { return n !== x; }); save(); }
+  // prazna tekstualna beleška (bez teksta i slika) se ne čuva
+  if (x && x.type === 'text' && !x.title.trim() && !x.body.trim() && !(x.images || []).length) { data.notes = data.notes.filter(function (n) { return n !== x; }); save(); }
   if (ui.from && folderById(ui.from)) { ui.folderId = ui.from; ui.screen = 'folder'; }
   else { ui.screen = 'home'; data.tab = 'notes'; }
   render();
@@ -654,12 +954,12 @@ function deleteNote(id) {
   var idx = data.notes.findIndex(function (x) { return x.id === id; });
   if (idx < 0) return;
   var removed = data.notes.splice(idx, 1)[0];
-  if (removed.fileId) scheduleFileDelete(removed.fileId);
+  noteFileIds(removed).forEach(scheduleFileDelete);
   save();
   if (ui.from && folderById(ui.from)) { ui.folderId = ui.from; ui.screen = 'folder'; } else { ui.screen = 'home'; data.tab = 'notes'; }
   render(true);
   toast(t('Beleška „{name}“ je obrisana', { name: removed.title || t('Bez naslova') }), t('Vrati'), function () {
-    if (removed.fileId) cancelFileDelete(removed.fileId);
+    noteFileIds(removed).forEach(cancelFileDelete);
     data.notes.splice(Math.min(idx, data.notes.length), 0, removed);
     save(); render(true);
   });
@@ -667,10 +967,24 @@ function deleteNote(id) {
 function askDeleteNote() {
   var x = noteById(ui.noteId); if (!x) return;
   if (x.type === 'text') { deleteNote(x.id); return; }
+  var img = x.type === 'image';
   modal({
-    title: t('Obrisati dokument?'),
-    text: t('Dokument „{name}“ biće obrisan sa ovog uređaja.', { name: x.title }),
-    buttons: [{ label: t('Obriši dokument'), kind: 'danger', onClick: function () { deleteNote(x.id); } }, { label: t('Otkaži'), kind: 'cancel' }]
+    title: img ? t('Obrisati sliku?') : t('Obrisati dokument?'),
+    text: img ? t('Slika „{name}“ biće obrisana sa ovog uređaja.', { name: x.title }) : t('Dokument „{name}“ biće obrisan sa ovog uređaja.', { name: x.title }),
+    buttons: [{ label: img ? t('Obriši sliku') : t('Obriši dokument'), kind: 'danger', onClick: function () { deleteNote(x.id); } }, { label: t('Otkaži'), kind: 'cancel' }]
+  });
+}
+function renameNote() {
+  var x = data.notes.find(function (n) { return n.id === ui.noteId; }); if (!x) return;
+  modal({
+    title: t('Preimenuj'), input: { value: x.title, placeholder: t('Naslov') },
+    buttons: [{ label: t('Sačuvaj'), kind: 'primary', onClick: function (v) {
+      v = (v || '').trim(); if (!v) return false;
+      x.title = v.slice(0, 120); x.updated = Date.now(); save();
+      var el = document.querySelector('.viewer-title, .read-title');
+      if (el && (ui.screen === 'pdf' || ui.screen === 'docx' || (ui.screen === 'image' && x.type === 'image'))) el.textContent = x.title;
+      else render(true);
+    } }, { label: t('Otkaži'), kind: 'cancel' }]
   });
 }
 
@@ -722,7 +1036,7 @@ function deleteFolder(f, withNotes) {
   if (withNotes) {
     removedNotes = inside.map(function (n) { return { note: n, idx: data.notes.indexOf(n) }; });
     data.notes = data.notes.filter(function (n) { return inside.indexOf(n) < 0; });
-    inside.forEach(function (n) { if (n.fileId) scheduleFileDelete(n.fileId); });
+    inside.forEach(function (n) { noteFileIds(n).forEach(scheduleFileDelete); });
   } else {
     inside.forEach(function (n) { n.folderId = null; });
   }
@@ -732,7 +1046,7 @@ function deleteFolder(f, withNotes) {
     data.folders.splice(Math.min(fIdx, data.folders.length), 0, f);
     if (withNotes) {
       removedNotes.sort(function (a, b) { return a.idx - b.idx; }).forEach(function (r) {
-        if (r.note.fileId) cancelFileDelete(r.note.fileId);
+        noteFileIds(r.note).forEach(cancelFileDelete);
         data.notes.splice(Math.min(r.idx, data.notes.length), 0, r.note);
       });
     } else {
@@ -786,10 +1100,14 @@ async function importFiles(files, folderId) {
         data.notes.push({ id: uid(), type: ext, title: title, fileId: fileId, size: file.size, folderId: folderId, updated: Date.now(), pages: null, lastPage: 1 });
         askPersist();
         ok++;
+      } else if (isImageFile(file)) {
+        var im = await storeImage(file);
+        data.notes.push({ id: uid(), type: 'image', title: imageTitle(file), fileId: im.fileId, size: im.size, w: im.w, h: im.h, thumb: im.thumb, folderId: folderId, updated: Date.now() });
+        ok++;
       } else if (ext === 'doc') {
         failed.push(t('„{name}“: stari .doc format nije podržan, sačuvaj ga kao .docx', { name: file.name }));
       } else {
-        failed.push(t('„{name}“: podržani su .txt, .pdf i .docx', { name: file.name }));
+        failed.push(t('„{name}“: podržani su .txt, .pdf, .docx i slike', { name: file.name }));
       }
     } catch (e) {
       failed.push(t('„{name}“: nema dovoljno prostora ili fajl nije mogao da se pročita', { name: file.name }));
@@ -801,6 +1119,70 @@ async function importFiles(files, folderId) {
   } else if (ok) {
     toast(t('Uvezeno: {n} {w}', { n: ok, w: pw(ok, 'beleška') }));
   }
+}
+
+/* slike: original ide u IndexedDB, a mala sličica (do 240 px) u podatke beleške za brz prikaz liste */
+function imageMeta(blob) {
+  return new Promise(function (res) {
+    var url = URL.createObjectURL(blob), img = new Image();
+    img.onload = function () {
+      var w = img.naturalWidth, h = img.naturalHeight, k = Math.min(1, 240 / Math.max(w, h)), thumb = null;
+      try {
+        var c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(w * k)); c.height = Math.max(1, Math.round(h * k));
+        var ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+        ctx.drawImage(img, 0, 0, c.width, c.height);
+        thumb = c.toDataURL('image/jpeg', 0.72);
+      } catch (e) {}
+      URL.revokeObjectURL(url); res({ w: w, h: h, thumb: thumb });
+    };
+    img.onerror = function () { URL.revokeObjectURL(url); res({}); };   // npr. HEIC u pregledaču koji ga ne zna
+    img.src = url;
+  });
+}
+async function storeImage(file) {
+  var buf = await readFile(file, false);
+  var ext = extOf(file.name);
+  var type = file.type || 'image/' + (ext === 'jpg' ? 'jpeg' : ext || 'jpeg');
+  var meta = await imageMeta(new Blob([buf], { type: type }));
+  var fileId = uid();
+  await filePut(fileId, { name: file.name || 'slika.jpg', type: type, buf: buf });
+  askPersist();
+  return { fileId: fileId, w: meta.w || null, h: meta.h || null, thumb: meta.thumb || null, size: file.size };
+}
+// fotografija iz kamere na iPhone-u stiže kao "image.jpg", pa joj dajemo naziv sa datumom
+function imageTitle(file) {
+  var base = (file.name || '').replace(/\.[^.]+$/, '');
+  return !base || /^image$/i.test(base) ? t('Slika {d}', { d: fmtDate(Date.now()) }) : base;
+}
+async function addImagesToNote(files) {
+  var x = data.notes.find(function (n) { return n.id === ui.noteId; }); if (!x) return;
+  var ok = 0, failed = 0;
+  x.images = x.images || [];
+  for (var i = 0; i < files.length; i++) {
+    if (!isImageFile(files[i])) { failed++; continue; }
+    try {
+      var im = await storeImage(files[i]);
+      x.images.push({ fileId: im.fileId, w: im.w, h: im.h, thumb: im.thumb, size: im.size });
+      ok++;
+    } catch (e) { failed++; }
+  }
+  if (ok) { x.updated = Date.now(); save(); render(true); toast(t('Dodato: {n} {w}', { n: ok, w: pw(ok, 'slika') })); }
+  if (failed) toast(t('Neke slike nisu dodate. Proveri format ili prostor na uređaju.'));
+}
+function removeNoteImage() {
+  var x = data.notes.find(function (n) { return n.id === ui.noteId; }), c = currentImage();
+  if (!x || !c || !c.list) return;
+  var idx = c.i, im = x.images.splice(idx, 1)[0];
+  x.updated = Date.now(); save();
+  scheduleFileDelete(im.fileId);
+  if (x.images.length) ui.imgId = x.images[Math.min(idx, x.images.length - 1)].fileId; else ui.screen = 'noteEdit';
+  render();
+  toast(t('Slika je uklonjena iz beleške'), t('Vrati'), function () {
+    cancelFileDelete(im.fileId);
+    x.images.splice(Math.min(idx, x.images.length), 0, im);
+    save(); render(true);
+  });
 }
 
 /* čuvanje fajla: na telefonu meni za deljenje (Sačuvaj u Fajlove), na računaru preuzimanje */
@@ -826,17 +1208,20 @@ function safeName(s) { return (s || 'beleska').replace(/[\\/:*?"<>|]+/g, '').tri
 var openFile = { fileId: null, rec: null };
 function downloadNote() {
   var x = noteById(ui.noteId); if (!x) return;
-  if (!x.type || x.type === 'text' || isBuiltin(x.id)) {
+  // slika iz tekstualne beleške
+  var c = ui.screen === 'image' ? currentImage() : null;
+  var fileId = c ? c.fileId : x.fileId;
+  if (!c && (!x.type || x.type === 'text' || isBuiltin(x.id))) {
     saveFile(safeName(x.title) + '.txt', new Blob([(x.title ? x.title + '\n\n' : '') + (x.body || '')], { type: 'text/plain;charset=utf-8' }));
     return;
   }
-  if (openFile.fileId === x.fileId && openFile.rec) {
+  if (openFile.fileId === fileId && openFile.rec) {
     saveFile(openFile.rec.name || safeName(x.title) + '.' + x.type, new Blob([openFile.rec.buf], { type: openFile.rec.type }));
     return;
   }
-  fileGet(x.fileId).then(function (rec) {
+  fileGet(fileId).then(function (rec) {
     if (!rec) { toast(t('Fajl nije pronađen na ovom uređaju.')); return; }
-    openFile = { fileId: x.fileId, rec: rec };
+    openFile = { fileId: fileId, rec: rec };
     modal({ title: t('Fajl je spreman'), text: rec.name, buttons: [
       { label: t('Sačuvaj'), kind: 'primary', onClick: function () { saveFile(rec.name, new Blob([rec.buf], { type: rec.type })); } },
       { label: t('Otkaži'), kind: 'cancel' }] });
@@ -890,20 +1275,111 @@ async function mountDocx() {
   }
 }
 
-/* ---------- PDF: stranice se listaju kao u knjizi (StPageFlip) ---------- */
+/* ---------- prikaz preko celog ekrana: dodiri, zumiranje, trake ---------- */
+
+/* Dodir bez pomeranja. Sa onDoubleTap čeka se kratko da se vidi da li sledi drugi dodir.
+   Prevlačenje, skrolovanje i gest sa dva prsta se ne računaju kao dodir. */
+function bindTaps(el, o) {
+  if (el.dataset.taps) return;
+  el.dataset.taps = '1';
+  var start = null, multi = false, last = null, timer = null;
+  el.addEventListener('touchstart', function (e) { if (e.touches.length > 1) multi = true; }, { passive: true });
+  el.addEventListener('pointerdown', function (e) {
+    if (!e.isPrimary) { multi = true; return; }
+    multi = false; start = { x: e.clientX, y: e.clientY, t: Date.now() };
+  });
+  el.addEventListener('pointercancel', function () { start = null; });
+  el.addEventListener('pointerup', function (e) {
+    if (!e.isPrimary || !start) return;
+    var s = start; start = null;
+    if (multi || Math.abs(e.clientX - s.x) + Math.abs(e.clientY - s.y) > 12 || Date.now() - s.t > 450) return;
+    var pt = { x: e.clientX, y: e.clientY };
+    if (!o.onDoubleTap) { setTimeout(function () { o.onTap(pt); }, 40); return; }
+    if (last && Date.now() - last.t < 300 && Math.abs(pt.x - last.x) + Math.abs(pt.y - last.y) < 40) {
+      clearTimeout(timer); last = null; o.onDoubleTap(pt); return;
+    }
+    last = { x: pt.x, y: pt.y, t: Date.now() };
+    clearTimeout(timer);
+    timer = setTimeout(function () { last = null; o.onTap(pt); }, 280);
+  });
+}
+
+/* Zumiranje unutar elementa koji se skroluje: dva prsta, dvostruki dodir, ctrl + točkić (touchpad).
+   o.set(z) menja veličinu sadržaja; tačka ispod prstiju ostaje na mestu. */
+function attachZoom(sc, o) {
+  var z = 1, pinch = null, raf = 0, pending = null, endTimer = null;
+  var min = o.min || 1, max = o.max || 4;
+  function apply(nz, cx, cy) {
+    nz = Math.min(max, Math.max(min, nz));
+    if (Math.abs(nz - z) < 0.002) return;
+    var r = sc.getBoundingClientRect(), fx = cx - r.left, fy = cy - r.top;
+    var sl = sc.scrollLeft, st = sc.scrollTop, k = nz / z;
+    z = nz; o.set(z);
+    sc.scrollLeft = (sl + fx) * k - fx;
+    sc.scrollTop = (st + fy) * k - fy;
+  }
+  function end() { clearTimeout(endTimer); endTimer = setTimeout(function () { if (o.onEnd) o.onEnd(z); }, 160); }
+  function dist(tt) { return Math.hypot(tt[0].clientX - tt[1].clientX, tt[0].clientY - tt[1].clientY); }
+  sc.addEventListener('touchstart', function (e) {
+    if (e.touches.length === 2) pinch = { d: dist(e.touches), z: z };
+  }, { passive: true });
+  sc.addEventListener('touchmove', function (e) {
+    if (e.touches.length !== 2 || !pinch) return;
+    if (e.cancelable) e.preventDefault();
+    var tt = e.touches;
+    pending = { z: pinch.z * dist(tt) / pinch.d, x: (tt[0].clientX + tt[1].clientX) / 2, y: (tt[0].clientY + tt[1].clientY) / 2 };
+    if (!raf) raf = requestAnimationFrame(function () { raf = 0; if (pending) { apply(pending.z, pending.x, pending.y); pending = null; } });
+  }, { passive: false });
+  sc.addEventListener('touchend', function (e) { if (pinch && e.touches.length < 2) { pinch = null; end(); } });
+  sc.addEventListener('wheel', function (e) {
+    if (!e.ctrlKey) return;
+    e.preventDefault();
+    apply(z * Math.exp(-e.deltaY * 0.01), e.clientX, e.clientY); end();
+  }, { passive: false });
+  return {
+    get: function () { return z; },
+    zoomTo: function (nz, cx, cy) { apply(nz, cx, cy); end(); },
+    toggle: function (pt, to) { this.zoomTo(z > 1.05 ? 1 : (to || 2.5), pt.x, pt.y); }
+  };
+}
+
+var viewerUiTimer = null;
+function toggleViewerUi(show) {
+  var s = document.querySelector('.viewer'); if (!s) return;
+  clearTimeout(viewerUiTimer);
+  var hide = show === undefined ? !s.classList.contains('ui-hidden') : !show;
+  s.classList.toggle('ui-hidden', hide);
+}
+// trake se same sklone posle par sekundi, kao u Apple Books
+function autoHideViewerUi() {
+  clearTimeout(viewerUiTimer);
+  viewerUiTimer = setTimeout(function () {
+    if (/^(pdf|image)$/.test(ui.screen) && !document.querySelector('.modal-back')) toggleViewerUi(false);
+  }, 3000);
+}
+function destroyViewer() { destroyBook(); destroyScroll(); destroyImage(); }
+
+/* ---------- PDF ---------- */
 var pdfDoc = null;   // { fileId, doc }
-var book = null;     // { pf, els, rendered, count, pageW, spread, noteId, wrapW, wrapH }
+var book = null;     // listanje kao knjiga: { pf, els, rendered, count, pageW, spread, noteId, wrapW, wrapH, ratio, state }
+var pscroll = null;  // skrolovanje: { els, rendered, count, baseW, ratio, area, stack, noteId, cur, zoom, wrapW }
 function destroyBook() {
   if (!book) return;
   try { book.pf.destroy(); } catch (e) {}
   book = null;
 }
+function destroyScroll() {
+  if (!pscroll) return;
+  Object.keys(pscroll.rendered).forEach(function (k) { var r = pscroll.rendered[k]; if (r && r.canvas) r.canvas.width = 0; });
+  pscroll = null;
+}
 async function mountPdf() {
   var x = noteById(ui.noteId);
   var wrap = document.getElementById('bookWrap');
   if (!x || !wrap) return;
+  var scroll = data.settings.pdfMode === 'scroll';
   try {
-    await Promise.all([loadScript('vendor/pdf.min.js'), loadScript('vendor/page-flip.browser.js')]);
+    await Promise.all([loadScript('vendor/pdf.min.js'), scroll ? null : loadScript('vendor/page-flip.browser.js')]);
     window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js';
     if (!pdfDoc || pdfDoc.fileId !== x.fileId) {
       if (pdfDoc) { try { pdfDoc.doc.destroy(); } catch (e) {} pdfDoc = null; }
@@ -912,19 +1388,40 @@ async function mountPdf() {
       var doc = await window.pdfjsLib.getDocument({ data: new Uint8Array(rec.buf.slice(0)) }).promise;
       pdfDoc = { fileId: x.fileId, doc: doc };
     }
-    if (ui.screen !== 'pdf' || ui.noteId !== x.id) return;
+    if (ui.screen !== 'pdf' || ui.noteId !== x.id || document.getElementById('bookWrap') !== wrap) return;
     var first = await pdfDoc.doc.getPage(1);
     var vp = first.getViewport({ scale: 1 });
     if (x.pages !== pdfDoc.doc.numPages) { x.pages = pdfDoc.doc.numPages; save(); }
-    buildBook(x, vp.width / vp.height);
-    // trake se same sklone posle par sekundi, kao u Apple Books
-    clearTimeout(pdfUiTimer);
-    pdfUiTimer = setTimeout(function () { if (ui.screen === 'pdf' && !document.querySelector('.modal-back')) togglePdfUi(false); }, 3000);
+    if (scroll) buildScroll(x, vp.width / vp.height); else buildBook(x, vp.width / vp.height);
+    autoHideViewerUi();
   } catch (e) {
     var w = document.getElementById('bookWrap');
-    if (w) w.innerHTML = '<p class="empty-note">' + t('PDF nije mogao da se otvori. Proveri da li je fajl ispravan.') + '</p>';
+    if (w) w.innerHTML = '<p class="empty-note" style="padding:24px">' + t('PDF nije mogao da se otvori. Proveri da li je fajl ispravan.') + '</p>';
   }
 }
+// zajedničko za oba režima: broj strane, klizač i pamćenje gde si stao
+function showPdfPage(noteId, idx, count, label) {
+  var x = noteById(noteId);
+  if (x && x.lastPage !== idx + 1) { x.lastPage = idx + 1; save(); }
+  var c = document.getElementById('pdfCount'); if (c) c.textContent = label || (idx + 1) + ' / ' + count;
+  var r = document.getElementById('pdfRange'); if (r) { r.max = count; r.value = idx + 1; }
+}
+async function renderPageCanvas(i, cssW) {
+  var page = await pdfDoc.doc.getPage(i + 1);
+  var vp1 = page.getViewport({ scale: 1 });
+  var dpr = Math.min(window.devicePixelRatio || 1, 2);
+  var w = cssW * dpr, h = w * vp1.height / vp1.width;
+  // ograničenje veličine platna (memorija telefona) kad je stranica jako uvećana
+  var maxPx = 4e6;
+  if (w * h > maxPx) { var k = Math.sqrt(maxPx / (w * h)); w *= k; h *= k; }
+  var vp = page.getViewport({ scale: w / vp1.width });
+  var canvas = document.createElement('canvas');
+  canvas.width = Math.floor(vp.width); canvas.height = Math.floor(vp.height);
+  await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+  return { canvas: canvas, ratio: vp1.width / vp1.height };
+}
+
+/* --- listanje kao knjiga (StPageFlip) --- */
 function buildBook(x, ratio) {
   var wrap = document.getElementById('bookWrap');
   if (!wrap || !pdfDoc) return;
@@ -955,65 +1452,26 @@ function buildBook(x, ratio) {
     drawShadow: true, maxShadowOpacity: 0.4,
     flippingTime: data.settings.reduceMotion ? 250 : 750,
     mobileScrollSupport: false, swipeDistance: 20, showPageCorners: true,
-    disableFlipByClick: true   // dodir lista samo na uglu; ostale dodire obrađuje bindBookTaps
+    disableFlipByClick: true   // dodir lista samo na uglu; ostale dodire obrađuje bindTaps
   });
   pf.loadFromHTML(els);
   book = { pf: pf, els: els, rendered: {}, count: count, pageW: pageW, spread: spread, noteId: x.id, wrapW: W, wrapH: H, ratio: ratio, state: 'read' };
   var thisBook = book;
-  pf.on('flip', function (e) { onPdfPage(e.data); });
+  pf.on('flip', function (e) { onBookPage(e.data); });
   pf.on('changeState', function (e) { thisBook.state = e.data; });
-  bindBookTaps(wrap);
-  onPdfPage(start);
+  // leva četvrtina lista nazad, desna napred, sredina pokazuje ili sakriva trake;
+  // biblioteka obrađuje svoj deo (ugao) pre nas, pa ne radimo ništa ako je ona počela da lista
+  bindTaps(wrap, { onTap: function (pt) {
+    if (!book || book.state !== 'read') return;
+    var r = wrap.getBoundingClientRect(), rel = (pt.x - r.left) / r.width;
+    if (rel < 0.25) pdfPrev(); else if (rel > 0.75) pdfNext(); else toggleViewerUi();
+  } });
+  onBookPage(start);
 }
-/* Dodir na strani: leva četvrtina lista nazad, desna napred, sredina pokazuje ili sakriva trake.
-   Prevlačenje (savijanje strane) i dodir na uglu obrađuje biblioteka. */
-function bindBookTaps(wrap) {
-  if (wrap.dataset.taps) return;
-  wrap.dataset.taps = '1';
-  var start = null;
-  wrap.addEventListener('pointerdown', function (e) { start = { x: e.clientX, y: e.clientY, t: Date.now() }; });
-  wrap.addEventListener('pointerup', function (e) {
-    if (!start) return;
-    var moved = Math.abs(e.clientX - start.x) + Math.abs(e.clientY - start.y), dt = Date.now() - start.t;
-    start = null;
-    if (moved > 12 || dt > 450) return;
-    var r = wrap.getBoundingClientRect(), rel = (e.clientX - r.left) / r.width;
-    // biblioteka obrađuje svoj deo posle nas; ako je ona počela da lista (ugao), ne radimo ništa
-    setTimeout(function () {
-      if (!book || book.state !== 'read') return;
-      if (rel < 0.25) pdfPrev();
-      else if (rel > 0.75) pdfNext();
-      else togglePdfUi();
-    }, 40);
-  });
-}
-/* StPageFlip-ov flipPrev() računa tačku kao da knjiga počinje na levoj ivici ekrana,
-   pa nazad ne lista u uspravnom položaju ni kad je knjiga centrirana. Zato tačku zadajemo sami. */
-function pdfPrev() {
-  if (!book) return;
-  var pf = book.pf, r = pf.getRender().getRect();
-  pf.flipController.flip({ x: r.left + 10, y: r.top + r.height - 2 });
-}
-function pdfNext() {
-  if (!book) return;
-  var pf = book.pf, r = pf.getRender().getRect();
-  pf.flipController.flip({ x: r.left + r.width - 10, y: r.top + r.height - 2 });
-}
-var pdfUiTimer = null;
-function togglePdfUi(show) {
-  var s = document.querySelector('.pdf-screen'); if (!s) return;
-  clearTimeout(pdfUiTimer);
-  var hide = show === undefined ? !s.classList.contains('ui-hidden') : !show;
-  s.classList.toggle('ui-hidden', hide);
-}
-function onPdfPage(idx) {
+function onBookPage(idx) {
   var b = book; if (!b) return;
-  var x = noteById(b.noteId);
-  if (x && x.lastPage !== idx + 1) { x.lastPage = idx + 1; save(); }
-  var label = (idx + 1) + (b.spread && idx + 2 <= b.count && idx % 2 === 0 ? '–' + (idx + 2) : '') + ' / ' + b.count;
-  var c = document.getElementById('pdfCount'); if (c) c.textContent = label;
-  var r = document.getElementById('pdfRange'); if (r) { r.max = b.count; r.value = idx + 1; }
-  for (var i = idx - 2; i <= idx + 3; i++) renderPdfPage(i);
+  showPdfPage(b.noteId, idx, b.count, (idx + 1) + (b.spread && idx + 2 <= b.count && idx % 2 === 0 ? '–' + (idx + 2) : '') + ' / ' + b.count);
+  for (var i = idx - 2; i <= idx + 3; i++) renderBookPage(i);
   Object.keys(b.rendered).forEach(function (k) {
     if (Math.abs(k - idx) > 8 && b.rendered[k] instanceof HTMLCanvasElement) {
       b.rendered[k].width = 0; b.rendered[k].remove(); delete b.rendered[k];
@@ -1021,36 +1479,153 @@ function onPdfPage(idx) {
     }
   });
 }
-async function renderPdfPage(i) {
+async function renderBookPage(i) {
   var b = book;
   if (!b || !pdfDoc || i < 0 || i >= b.count || b.rendered[i]) return;
   b.rendered[i] = 'pending';
   try {
-    var page = await pdfDoc.doc.getPage(i + 1);
-    if (book !== b) return;
-    var dpr = Math.min(window.devicePixelRatio || 1, 2);
-    var vp1 = page.getViewport({ scale: 1 });
-    var vp = page.getViewport({ scale: b.pageW / vp1.width * dpr });
-    var canvas = document.createElement('canvas');
-    canvas.width = Math.floor(vp.width); canvas.height = Math.floor(vp.height);
-    await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
-    if (book !== b) return;
+    var r = await renderPageCanvas(i, b.pageW);
+    if (book !== b) { r.canvas.width = 0; return; }
     var no = b.els[i].querySelector('.pdf-page-no'); if (no) no.remove();
-    b.els[i].appendChild(canvas);
-    b.rendered[i] = canvas;
+    b.els[i].appendChild(r.canvas);
+    b.rendered[i] = r.canvas;
   } catch (e) { if (book === b) delete b.rendered[i]; }
 }
+
+/* --- skrolovanje: strane jedna ispod druge, zumiranje sa dva prsta --- */
+var STACK_TOP = 56;   // prostor iznad prve strane (gornja traka), isto kao padding u .pdf-stack
+function buildScroll(x, ratio) {
+  var area = document.getElementById('bookWrap');
+  if (!area || !pdfDoc) return;
+  var keep = pscroll ? pscroll.cur : Math.max(0, (x.lastPage || 1) - 1);
+  destroyScroll();
+  var count = pdfDoc.doc.numPages;
+  var W = area.clientWidth;
+  // telefon: strana od ivice do ivice; veći ekran: udobna širina za čitanje
+  var baseW = W >= 700 ? Math.min(W - 48, 900) : W;
+  var stack = document.createElement('div');
+  stack.className = 'pdf-stack';
+  stack.style.width = baseW + 'px';
+  var els = [];
+  for (var i = 0; i < count; i++) {
+    var p = document.createElement('div');
+    p.className = 'pdf-spage';
+    p.style.aspectRatio = String(ratio);
+    p.innerHTML = '<span class="pdf-page-no">' + (i + 1) + '</span>';
+    stack.appendChild(p); els.push(p);
+  }
+  area.innerHTML = '';
+  area.appendChild(stack);
+  var s = pscroll = { els: els, rendered: {}, count: count, baseW: baseW, ratio: ratio, area: area, stack: stack, noteId: x.id, cur: Math.min(keep, count - 1), wrapW: W, lastTop: 0 };
+  s.zoom = attachZoom(area, {
+    min: 1, max: 4,
+    set: function (z) { stack.style.width = Math.round(baseW * z) + 'px'; },
+    onEnd: function () { if (pscroll === s) updateScroll(true); }   // posle zumiranja oštrije strane
+  });
+  if (!area.dataset.scrollBound) {
+    area.dataset.scrollBound = '1';
+    area.addEventListener('scroll', onPdfScroll, { passive: true });
+  }
+  bindTaps(area, {
+    onTap: function () { toggleViewerUi(); },
+    onDoubleTap: function (pt) { if (pscroll) pscroll.zoom.toggle(pt, 2); }
+  });
+  area.scrollTop = Math.max(0, els[s.cur].offsetTop - STACK_TOP);
+  s.lastTop = area.scrollTop;
+  updateScroll();
+}
+var scrollRaf = 0;
+function onPdfScroll() {
+  var s = pscroll; if (!s) return;
+  // dok čitaš, trake se sklanjaju
+  if (Math.abs(s.area.scrollTop - s.lastTop) > 40) { s.lastTop = s.area.scrollTop; toggleViewerUi(false); }
+  if (scrollRaf) return;
+  scrollRaf = requestAnimationFrame(function () { scrollRaf = 0; updateScroll(); });
+}
+function updateScroll(sharpen) {
+  var s = pscroll; if (!s) return;
+  var top = s.area.scrollTop, h = s.area.clientHeight, mid = top + h * 0.4, cur = s.cur;
+  var visible = [];
+  for (var i = 0; i < s.count; i++) {
+    var y = s.els[i].offsetTop, eh = s.els[i].offsetHeight;
+    if (y + eh >= top - h * 0.5 && y <= top + h * 1.5) visible.push(i);
+    if (y <= mid && y + eh > mid) cur = i;
+    if (y > top + h * 1.5) break;
+  }
+  if (cur !== s.cur || sharpen === undefined) { s.cur = cur; showPdfPage(s.noteId, cur, s.count); }
+  s.cur = cur;
+  visible.forEach(function (i) { renderScrollPage(i, sharpen); });
+  // strane daleko od trenutne oslobađaju memoriju
+  Object.keys(s.rendered).forEach(function (k) {
+    var r = s.rendered[k];
+    if (r && r.canvas && Math.abs(k - cur) > 6) {
+      r.canvas.width = 0; r.canvas.remove(); delete s.rendered[k];
+      s.els[k].innerHTML = '<span class="pdf-page-no">' + (+k + 1) + '</span>';
+    }
+  });
+}
+async function renderScrollPage(i, sharpen) {
+  var s = pscroll;
+  if (!s || !pdfDoc || i < 0 || i >= s.count) return;
+  var el = s.els[i], have = s.rendered[i], cssW = el.clientWidth || s.baseW;
+  if (have === 'pending') return;
+  if (have && (!sharpen || Math.abs(have.cssW - cssW) / cssW < 0.15)) return;
+  s.rendered[i] = 'pending';
+  try {
+    var r = await renderPageCanvas(i, cssW);
+    if (pscroll !== s) { r.canvas.width = 0; return; }
+    // strana drugačijeg formata od prve: ispravi visinu, a da se tekst koji čitaš ne pomeri
+    if (Math.abs(r.ratio - s.ratio) > 0.01) {
+      var before = el.offsetHeight;
+      el.style.aspectRatio = String(r.ratio);
+      if (el.offsetTop < s.area.scrollTop) s.area.scrollTop += el.offsetHeight - before;
+    }
+    var no = el.querySelector('.pdf-page-no'); if (no) no.remove();
+    el.appendChild(r.canvas);
+    if (have && have.canvas) { have.canvas.width = 0; have.canvas.remove(); }
+    s.rendered[i] = { canvas: r.canvas, cssW: cssW };
+  } catch (e) { if (pscroll === s) { if (have) s.rendered[i] = have; else delete s.rendered[i]; } }
+}
+function scrollToPage(i, smooth) {
+  var s = pscroll; if (!s) return;
+  i = Math.min(Math.max(i, 0), s.count - 1);
+  var top = Math.max(0, s.els[i].offsetTop - STACK_TOP);
+  if (smooth && !data.settings.reduceMotion) s.area.scrollTo({ top: top, behavior: 'smooth' });
+  else s.area.scrollTop = top;
+  s.cur = i; showPdfPage(s.noteId, i, s.count);
+}
+
+/* --- zajedničke komande za oba režima --- */
+/* StPageFlip-ov flipPrev() računa tačku kao da knjiga počinje na levoj ivici ekrana,
+   pa nazad ne lista u uspravnom položaju ni kad je knjiga centrirana. Zato tačku zadajemo sami. */
+function pdfPrev() {
+  if (pscroll) { scrollToPage(pscroll.cur - 1, true); return; }
+  if (!book) return;
+  var pf = book.pf, r = pf.getRender().getRect();
+  pf.flipController.flip({ x: r.left + 10, y: r.top + r.height - 2 });
+}
+function pdfNext() {
+  if (pscroll) { scrollToPage(pscroll.cur + 1, true); return; }
+  if (!book) return;
+  var pf = book.pf, r = pf.getRender().getRect();
+  pf.flipController.flip({ x: r.left + r.width - 10, y: r.top + r.height - 2 });
+}
 function pdfGoTo(n) {
+  if (pscroll) { scrollToPage(n - 1, false); return; }
   if (!book) return;
   n = Math.min(Math.max(n, 1), book.count) - 1;
   book.pf.turnToPage(n);
-  onPdfPage(n);
+  onBookPage(n);
 }
 function pdfMenu() {
   var x = noteById(ui.noteId); if (!x) return;
+  var scroll = data.settings.pdfMode === 'scroll';
   modal({
     title: x.title,
     buttons: [
+      { label: scroll ? t('Listaj kao knjigu') : t('Skroluj stranice'), kind: 'plain', onClick: function () {
+        data.settings.pdfMode = scroll ? 'book' : 'scroll'; save(); render();
+      } },
       { label: data.settings.pdfDark ? t('Svetle stranice') : t('Tamne stranice'), kind: 'plain', onClick: function () {
         data.settings.pdfDark = !data.settings.pdfDark; save();
         var w = document.getElementById('bookWrap'); if (w) w.classList.toggle('dark-pages', data.settings.pdfDark);
@@ -1062,6 +1637,7 @@ function pdfMenu() {
         }, 0);
       } },
       document.fullscreenEnabled ? { label: document.fullscreenElement ? t('Izađi iz celog ekrana') : t('Ceo ekran'), kind: 'plain', onClick: function () { acts.fs(); } } : null,
+      { label: t('Preimenuj'), kind: 'plain', onClick: function () { setTimeout(renameNote, 0); } },
       { label: t('Premesti u folder'), kind: 'plain', onClick: function () { setTimeout(moveNote, 0); } },
       { label: t('Preuzmi PDF'), kind: 'plain', onClick: function () { downloadNote(); } },
       { label: t('Obriši dokument'), kind: 'danger', onClick: function () { setTimeout(askDeleteNote, 0); } },
@@ -1069,14 +1645,99 @@ function pdfMenu() {
     ]
   });
 }
-var bookResizeTimer = null;
+function docMenu() {
+  var x = noteById(ui.noteId); if (!x) return;
+  modal({
+    title: x.title,
+    buttons: [
+      { label: t('Preimenuj'), kind: 'plain', onClick: function () { setTimeout(renameNote, 0); } },
+      { label: t('Premesti u folder'), kind: 'plain', onClick: function () { setTimeout(moveNote, 0); } },
+      { label: t('Preuzmi'), kind: 'plain', onClick: function () { downloadNote(); } },
+      { label: t('Obriši dokument'), kind: 'danger', onClick: function () { setTimeout(askDeleteNote, 0); } },
+      { label: t('Zatvori'), kind: 'cancel' }
+    ]
+  });
+}
+
+/* ---------- slika preko celog ekrana ---------- */
+var imgView = null;   // { url, img, nat, area, fit, zoom }
+function destroyImage() {
+  if (!imgView) return;
+  URL.revokeObjectURL(imgView.url);
+  imgView = null;
+}
+async function mountImage() {
+  var c = currentImage(), area = document.getElementById('imgArea');
+  if (!c || !area) return;
+  try {
+    var rec = await getOpenFile(c.fileId);
+    if (!rec) throw new Error('missing');
+    if (document.getElementById('imgArea') !== area) return;
+    var url = URL.createObjectURL(new Blob([rec.buf], { type: rec.type || 'image/jpeg' }));
+    var img = new Image();
+    img.alt = c.title || '';
+    await new Promise(function (res, rej) { img.onload = res; img.onerror = rej; img.src = url; });
+    if (document.getElementById('imgArea') !== area) { URL.revokeObjectURL(url); return; }
+    destroyImage();
+    var v = imgView = { url: url, img: img, nat: { w: img.naturalWidth, h: img.naturalHeight }, area: area, fit: 1 };
+    var stage = area.querySelector('.img-stage');
+    stage.innerHTML = '';
+    stage.appendChild(img);
+    v.layout = function () {
+      // cela slika na ekranu; male slike se uvećavaju najviše dva puta
+      v.fit = Math.min(area.clientWidth / v.nat.w, area.clientHeight / v.nat.h, 2);
+      v.apply(v.zoom ? v.zoom.get() : 1);
+    };
+    v.apply = function (z) {
+      img.style.width = Math.round(v.nat.w * v.fit * z) + 'px';
+      img.style.height = Math.round(v.nat.h * v.fit * z) + 'px';
+    };
+    v.layout();
+    // najveće uvećanje: bar 4×, a za velike fotografije do pune oštrine originala
+    v.zoom = attachZoom(area, { min: 1, max: Math.min(12, Math.max(4, 2 / v.fit)), set: v.apply });
+    bindTaps(area, {
+      onTap: function () { toggleViewerUi(); },
+      onDoubleTap: function (pt) { if (imgView) imgView.zoom.toggle(pt, 2.5); }
+    });
+    autoHideViewerUi();
+  } catch (e) {
+    var a = document.getElementById('imgArea');
+    if (a) a.innerHTML = '<p class="empty-note" style="padding:24px">' + t('Ova slika ne može da se prikaže u ovom pregledaču. Možeš da je preuzmeš i otvoriš u drugoj aplikaciji.') + '</p>';
+  }
+}
+function imgStep(d) {
+  var c = currentImage(); if (!c || !c.list) return;
+  var i = c.i + d; if (i < 0 || i >= c.list.length) return;
+  ui.imgId = c.list[i].fileId; render();
+}
+function imgMenu() {
+  var x = noteById(ui.noteId), c = currentImage(); if (!x || !c) return;
+  var buttons = c.list ? [
+    { label: t('Preuzmi sliku'), kind: 'plain', onClick: function () { downloadNote(); } },
+    { label: t('Ukloni iz beleške'), kind: 'danger', onClick: function () { setTimeout(removeNoteImage, 0); } },
+    { label: t('Zatvori'), kind: 'cancel' }
+  ] : [
+    { label: t('Preimenuj'), kind: 'plain', onClick: function () { setTimeout(renameNote, 0); } },
+    { label: t('Premesti u folder'), kind: 'plain', onClick: function () { setTimeout(moveNote, 0); } },
+    { label: t('Preuzmi sliku'), kind: 'plain', onClick: function () { downloadNote(); } },
+    { label: t('Obriši sliku'), kind: 'danger', onClick: function () { setTimeout(askDeleteNote, 0); } },
+    { label: t('Zatvori'), kind: 'cancel' }
+  ];
+  modal({ title: c.list ? t('Slika {i} od {n}', { i: c.i + 1, n: c.list.length }) : x.title, buttons: buttons });
+}
+
+var viewerResizeTimer = null;
 window.addEventListener('resize', function () {
-  if (ui.screen !== 'pdf' || !book) return;
-  clearTimeout(bookResizeTimer);
-  bookResizeTimer = setTimeout(function () {
-    var wrap = document.getElementById('bookWrap'); if (!wrap || !book) return;
-    if (Math.abs(wrap.clientWidth - book.wrapW) > 20 || Math.abs(wrap.clientHeight - book.wrapH) > 20) {
-      var x = noteById(book.noteId); if (x) buildBook(x, book.ratio);
+  clearTimeout(viewerResizeTimer);
+  viewerResizeTimer = setTimeout(function () {
+    if (ui.screen === 'image' && imgView) { imgView.layout(); return; }
+    if (ui.screen !== 'pdf') return;
+    var wrap = document.getElementById('bookWrap'); if (!wrap) return;
+    var x;
+    if (book && (Math.abs(wrap.clientWidth - book.wrapW) > 20 || Math.abs(wrap.clientHeight - book.wrapH) > 20)) {
+      x = noteById(book.noteId); if (x) buildBook(x, book.ratio);
+    } else if (pscroll && Math.abs(wrap.clientWidth - pscroll.wrapW) > 20) {
+      render();   // novi elementi, da se zumiranje ne veže dvaput; strana je zapamćena u lastPage
     }
   }, 250);
 });
@@ -1097,10 +1758,11 @@ async function backupExport() {
   try {
     saveNow();
     var files = {};
-    var withFiles = data.notes.filter(function (n) { return n.fileId; });
-    for (var i = 0; i < withFiles.length; i++) {
-      var rec = await fileGet(withFiles[i].fileId);
-      if (rec) files[withFiles[i].fileId] = { name: rec.name, type: rec.type, b64: bufToB64(rec.buf) };
+    var ids = [];
+    data.notes.forEach(function (n) { ids = ids.concat(noteFileIds(n)); });
+    for (var i = 0; i < ids.length; i++) {
+      var rec = await fileGet(ids[i]);
+      if (rec) files[ids[i]] = { name: rec.name, type: rec.type, b64: bufToB64(rec.buf) };
     }
     var json = JSON.stringify({ app: 'kartice', format: 1, version: APP_VERSION, created: Date.now(), data: data, files: files });
     var day = new Date().toISOString().slice(0, 10);
@@ -1182,7 +1844,7 @@ var acts = {
     } catch (e) {}
   },
   addCard: function () {
-    var d = deck(), c = { id: uid(), n: String(nextNo(d) + 1), q: '', a: '' };
+    var d = deck(), c = { id: uid(), n: String(nextNo(d.cards) + 1), q: '', a: '' };
     d.cards.push(c); save(); render(true);
     var el = document.getElementById('q-' + c.id);
     if (el) { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.focus({ preventScroll: true }); }
@@ -1195,11 +1857,81 @@ var acts = {
   manage: function () { ui.manage = !ui.manage; render(true); },
   tab: function (v) { data.tab = v; ui.manage = false; save(); render(true); },
   delDeck: function (id) { askDeleteDeck(id || ui.deckId); },
+
+  // kvizovi
+  openQuiz: function (id) { ui.quizId = id; ui.screen = 'quiz'; ui.manage = false; render(); },
+  toQuizzes: function () { ui.screen = 'home'; data.tab = 'quizzes'; ui.manage = false; render(); },
+  toQuiz: function () { ui.screen = 'quiz'; render(); },
+  newQuiz: function () {
+    var z = { id: uid(), name: t('Novi kviz'), tag: '', questions: [], known: {} };
+    data.quizzes.push(z); save();
+    ui.quizId = z.id; ui.screen = 'quizEdit'; render();
+    var n = document.getElementById('quizName'); if (n) { n.focus(); n.select(); }
+  },
+  delQuiz: function (id) { askDeleteQuiz(id || ui.quizId); },
+  editQuiz: function () { ui.screen = 'quizEdit'; render(); },
+  startQuiz: function () { beginQuiz(playable(quiz()).map(function (q) { return q.id; })); },
+  startQuizUnknown: function () { var z = quiz(); beginQuiz(playable(z).filter(function (q) { return !z.known[q.id]; }).map(function (q) { return q.id; })); },
+  retryWrong: function () { beginQuiz(ui.qz.wrong.slice()); },
+  resetQuiz: function () {
+    modal({ title: t('Resetovati napredak?'), text: t('Sva pitanja u ovom kvizu biće označena kao nenaučena.'),
+      buttons: [{ label: t('Resetuj napredak'), kind: 'danger', onClick: function () { quiz().known = {}; save(); render(true); toast(t('Napredak je resetovan')); } },
+        { label: t('Otkaži'), kind: 'cancel' }] });
+  },
+  pick: function (v) { pick(parseInt(v, 10)); },
+  dontKnow: function () { pick(-1); },
+  nextQ: nextQuestion,
+  addQuestion: function () {
+    var z = quiz(), q = { id: uid(), n: String(nextNo(z.questions) + 1), q: '', options: ['', '', '', ''], correct: null };
+    z.questions.push(q); save(); render(true);
+    var el = document.getElementById('qq-' + q.id);
+    if (el) { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.focus({ preventScroll: true }); }
+  },
+  delQuestion: function (id) {
+    var z = quiz();
+    z.questions = z.questions.filter(function (q) { return q.id !== id; });
+    delete z.known[id]; save(); render(true); toast(t('Pitanje je obrisano'));
+  },
+  addOpt: function (id) {
+    var q = qById(quiz(), id); if (!q || q.options.length >= LETTERS.length) return;
+    q.options.push(''); save(); render(true);
+    var el = document.getElementById('o-' + q.id + '-' + (q.options.length - 1)); if (el) el.focus();
+  },
+  delOpt: function (v) {
+    var a = splitArg(v), q = a.q; if (!q) return;
+    q.options.splice(a.k, 1);
+    if (q.correct === a.k) q.correct = null; else if (q.correct > a.k) q.correct--;
+    save(); render(true);
+  },
+  markRight: function (v) {
+    var a = splitArg(v); if (!a.q) return;
+    a.q.correct = a.k; save(); render(true);
+  },
+  importQuiz: function () {
+    var ta = document.getElementById('quizImportText');
+    var list = parseQuizImport(ta.value);
+    if (!list.length) { toast(t('Nema pitanja u tekstu. Proveri format.')); return; }
+    var z = quiz(), start = nextNo(z.questions);
+    list.forEach(function (q, k) { z.questions.push({ id: uid(), n: String(start + k + 1), q: q.q, options: q.options, correct: q.correct }); });
+    var noMark = list.filter(function (q) { return q.correct === null; }).length;
+    save(); render(true);
+    toast(t('Dodato: {n} {w}', { n: list.length, w: pw(list.length, 'pitanje') }) + (noMark ? ' · ' + t('bez tačnog odgovora: {n}', { n: noMark }) : ''));
+  },
+  exportQuiz: function () {
+    var z = quiz(), text = quizToText(z);
+    var done = function () { toast(t('Kopirano: {n} {w}', { n: z.questions.length, w: pw(z.questions.length, 'pitanje') })); };
+    var fallback = function () {
+      var det = document.querySelector('.import'); det.open = true;
+      var ta = document.getElementById('quizImportText'); ta.value = text; ta.focus(); ta.select();
+      toast(t('Tekst je označen. Kopiraj ga sa Ctrl+C.'));
+    };
+    try { navigator.clipboard.writeText(text).then(done, fallback); } catch (e) { fallback(); }
+  },
   import: function () {
     var ta = document.getElementById('importText');
     var list = parseImport(ta.value);
     if (!list.length) { toast(t('Nema kartica u tekstu. Proveri format.')); return; }
-    var d = deck(), start = nextNo(d);
+    var d = deck(), start = nextNo(d.cards);
     list.forEach(function (c, k) { d.cards.push({ id: uid(), n: String(start + k + 1), q: c.q, a: c.a }); });
     save(); render(true);
     toast(t('Dodato: {n} {w}', { n: list.length, w: pw(list.length, 'kartica') }));
@@ -1241,6 +1973,19 @@ var acts = {
   pdfPrev: pdfPrev,
   pdfNext: pdfNext,
   pdfMenu: pdfMenu,
+  docMenu: docMenu,
+  imgMenu: imgMenu,
+  imgPrev: function () { imgStep(-1); },
+  imgNext: function () { imgStep(1); },
+  addImage: function (folderId) {
+    var f = document.getElementById('imageFile'); if (!f) return;
+    f.dataset.folder = folderId || '';
+    f.click();
+  },
+  addNoteImage: function () { var f = document.getElementById('noteImageFile'); if (f) f.click(); },
+  openImage: function (fileId) { ui.imgId = fileId; ui.screen = 'image'; render(); },
+  backToNote: function () { ui.screen = 'noteEdit'; render(); },
+  setPdfMode: function (v) { data.settings.pdfMode = v; save(); render(true); },
 
   // podešavanja
   setFont: function (v) { data.settings.font = v; save(); render(true); },
@@ -1272,8 +2017,21 @@ document.addEventListener('input', function (e) {
     return;
   }
   if (tg.id === 'noteSearch') { searchNotes(tg.value); return; }
+  if (tg.dataset.quiz || tg.dataset.qq || tg.dataset.qopt) {
+    var z = quiz(); if (!z) return;
+    if (tg.dataset.quiz) z[tg.dataset.quiz] = tg.value;
+    else {
+      var q = qById(z, tg.dataset.id); if (!q) return;
+      if (tg.dataset.qq) q.q = tg.value; else q.options[+tg.dataset.qopt] = tg.value;
+      var w = document.getElementById('qw-' + q.id); if (w) w.textContent = questionIssue(q);
+    }
+    save();
+    if (tg.tagName === 'TEXTAREA') autosize(tg);
+    return;
+  }
   if (tg.id === 'pdfRange') {
-    var c = document.getElementById('pdfCount'); if (c && book) c.textContent = tg.value + ' / ' + book.count;
+    var c = document.getElementById('pdfCount'), cnt = book ? book.count : pscroll ? pscroll.count : 0;
+    if (c && cnt) c.textContent = tg.value + ' / ' + cnt;
     return;
   }
   var d = deck();
@@ -1301,11 +2059,14 @@ function searchNotes(q) {
 }
 document.addEventListener('change', function (e) {
   var tg = e.target;
-  if (tg.id === 'noteFile' && tg.files.length) {
+  if ((tg.id === 'noteFile' || tg.id === 'imageFile') && tg.files.length) {
     var files = Array.prototype.slice.call(tg.files);
     var folderId = tg.dataset.folder || null;
     tg.value = '';
     importFiles(files, folderId);
+  } else if (tg.id === 'noteImageFile' && tg.files.length) {
+    var imgs = Array.prototype.slice.call(tg.files); tg.value = '';
+    addImagesToNote(imgs);
   } else if (tg.id === 'backupFile' && tg.files.length) {
     var f = tg.files[0]; tg.value = '';
     backupImport(f);
@@ -1331,11 +2092,25 @@ document.addEventListener('keydown', function (e) {
     else if (e.key === '1' && ui.flipped) mark(false);
     else if (e.key === '2' && ui.flipped) mark(true);
     else if (e.key === 'Escape' && !document.fullscreenElement) acts.toDeck();
-  } else if (ui.screen === 'pdf' && book) {
+  } else if (ui.screen === 'pdf' && (book || pscroll)) {
     if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); pdfPrev(); }
     else if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') { e.preventDefault(); pdfNext(); }
     else if (e.key === 'Escape' && !document.fullscreenElement) backFromNote();
+  } else if (ui.screen === 'image') {
+    if (e.key === 'ArrowLeft') { e.preventDefault(); imgStep(-1); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); imgStep(1); }
+    else if (e.key === 'Escape' && !document.fullscreenElement) { if (currentImage() && currentImage().list) acts.backToNote(); else backFromNote(); }
+  } else if (ui.screen === 'quizPlay' && ui.qz) {
+    var onBtn = e.target.closest && e.target.closest('button');
+    if (e.key === 'Escape' && !document.fullscreenElement) acts.toQuiz();
+    else if (ui.qz.picked === null) {
+      var k = '123456789'.indexOf(e.key), l = LETTERS.toLowerCase().indexOf(e.key.toLowerCase());
+      if (e.key.length === 1 && (k >= 0 || l >= 0)) { e.preventDefault(); pickByKey(k >= 0 ? k : l); }
+    } else if ((e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowRight') && !(onBtn && e.key !== 'ArrowRight')) {
+      e.preventDefault(); nextQuestion();
+    }
   } else if (ui.screen === 'done' && e.key === 'Escape') acts.toDeck();
+  else if (ui.screen === 'quizDone' && e.key === 'Escape') acts.toQuiz();
 });
 
 /* prevlačenje kartice na telefonu */
@@ -1377,6 +2152,15 @@ function settle(el) {
 
 document.addEventListener('fullscreenchange', function () { ui.fs = !!document.fullscreenElement; render(true); });
 
+/* Bez zumiranja cele aplikacije prstima. iOS ne poštuje user-scalable=no iz index.html,
+   pa gest skupljanja prstiju blokiramo ovde; zumiranje u PDF-u i slikama radi attachZoom. */
+['gesturestart', 'gesturechange', 'gestureend'].forEach(function (type) {
+  document.addEventListener(type, function (e) { e.preventDefault(); }, { passive: false });
+});
+document.addEventListener('touchmove', function (e) {
+  if (e.touches.length > 1 && !e.target.closest('.zoomable')) e.preventDefault();
+}, { passive: false });
+
 // iOS aplikacija sa početnog ekrana: statusna traka nije providna (vidi index.html)
 if (navigator.standalone === true) document.body.classList.add('ios-app');
 
@@ -1395,7 +2179,7 @@ function checkUpdate() {
 }
 function applyUpdate() {
   if (!pendingUpdate) return;
-  if (/^(cards|noteEdit|edit|pdf|docx)$/.test(ui.screen) || document.querySelector('.modal-back')) return;
+  if (/^(cards|noteEdit|edit|pdf|docx|image|quizPlay|quizEdit)$/.test(ui.screen) || document.querySelector('.modal-back')) return;
   saveNow();
   location.reload();
 }
