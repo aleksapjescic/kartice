@@ -46,6 +46,8 @@ body.ts-s { --ts: .9; }
 body.ts-l { --ts: 1.15; }
 body.ts-xl { --ts: 1.3; }
 
+/* atribut hidden uvek sakriva, i kad klasa (.stack, .section…) zadaje display */
+[hidden] { display: none !important; }
 html, body { height: 100%; }
 html { -webkit-text-size-adjust: 100%; touch-action: manipulation; }   /* bez zumiranja dvostrukim dodirom */
 body {
@@ -393,6 +395,7 @@ body.on-viewer .fs { display: none; }
 .viewer-area.zoomable {
   display: block; overflow: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
   touch-action: pan-x pan-y; scrollbar-width: none;
+  place-items: normal;   /* centriranje iz .viewer-area bi uvećan sadržaj pomerilo levo od ivice, van skrola */
 }
 .viewer-area.zoomable::-webkit-scrollbar { display: none; }
 .viewer-loading { font-size: 15px; color: var(--muted); }
@@ -417,7 +420,8 @@ body.on-viewer .fs { display: none; }
 .pdf-spage { position: relative; width: 100%; background: #fff; overflow: hidden; flex: none; }
 
 /* slika preko celog ekrana */
-.img-stage { min-width: 100%; min-height: 100%; display: flex; align-items: center; justify-content: center; box-sizing: border-box; }
+/* široka koliko sadržaj (max-content): centrirana dok je manja od ekrana, a uvećana se skroluje do obe ivice */
+.img-stage { width: max-content; min-width: 100%; min-height: 100%; display: flex; align-items: center; justify-content: center; box-sizing: border-box; }
 .img-stage img { display: block; max-width: none; flex: none; -webkit-user-select: none; user-select: none; -webkit-user-drag: none; -webkit-touch-callout: none; }
 
 /* slike u belešci i umanjeni prikazi */
@@ -464,8 +468,64 @@ body.on-viewer .fs { display: none; }
 .toggle-row[aria-checked="true"] .switch::after { transform: translateX(18px); background: #fff; }
 .small-note { margin: 0; font-size: 13px; line-height: 1.5; color: var(--muted); }
 
+/* učenje: Poništi, slike na kartici, dug tekst kad se uči obrnuto (odgovor je napred) */
+.link.undo { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; font-size: 14px; }
+.done .link.undo { align-self: center; }
+.study-top .topbar-actions { gap: 10px; }
+.q-big { white-space: pre-line; }
+.q-big.long { font-size: calc(18px * var(--ts)); line-height: 1.5; font-weight: 500; letter-spacing: 0; }
+.front-body { display: flex; flex-direction: column; gap: 14px; min-height: 0; overflow-y: auto; scrollbar-width: none; }
+.front-body::-webkit-scrollbar { display: none; }
+.front-body .q-big { overflow: visible; flex: none; }
+.q-small.clamp span:last-child { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font-weight: 500; }
+.card-img {
+  display: block; flex: none; max-width: 100%; max-height: 42vh; max-height: 42dvh; width: auto; height: auto;
+  object-fit: contain; border-radius: 12px; background: #fff; -webkit-user-select: none; user-select: none; -webkit-user-drag: none;
+}
+.answer .card-img { margin-top: 12px; }
+.answer .card-img:first-child { margin-top: 0; }
+
+/* izmena kartica: slike uz pitanje i odgovor */
+.ed-img { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
+.ed-img span { flex: 1 1 auto; min-width: 0; }
+.ed-img .link { min-height: 32px; font-size: 14px; padding: 0 4px; }
+.ed-thumb { width: 52px; height: 52px; flex: none; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); background: var(--card); }
+
+/* pretraga: deo teksta oko pogotka */
+.note-preview.snip { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+mark { background: color-mix(in srgb, var(--accent) 38%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
+.note-foot { flex-wrap: wrap; }
+.foot-actions { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+
+/* prozor sa više polja (kartica iz beleške) */
+.modal.wide { max-width: 460px; }
+.m-field { display: flex; flex-direction: column; gap: 2px; text-align: left; }
+.m-field .label { padding-left: 2px; }
+.modal textarea.input { max-height: 38vh; max-height: 38dvh; overflow-y: auto; font-size: 16px; }
+.modal select.input { font-size: 16px; }
+
+/* dugme kad je u belešci označen tekst */
+.sel-card {
+  position: fixed; left: 0; right: 0; margin-inline: auto; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); z-index: 20;
+  width: max-content; max-width: calc(100% - 40px); padding: 12px 18px; border: 0; border-radius: 999px;
+  background: var(--accent); color: var(--on-accent); font-size: 15px; font-weight: 600;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, .35); animation: fadeUp .2s ease-out;
+}
+.sel-card[hidden] { display: none; }
+
+/* PDF kao knjiga: uvećana strana u sloju preko knjige */
+.book-zoom {
+  position: absolute; inset: 0; z-index: 2; display: none; background: var(--bg);
+  overflow: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; touch-action: pan-x pan-y; scrollbar-width: none;
+}
+.book-zoom::-webkit-scrollbar { display: none; }
+.book-zoom.on { display: block; }
+.viewer-area.zoomed .book { visibility: hidden; }
+.zoom-pages { display: flex; flex: none; }
+
 /* desktop */
 @media (min-width: 900px) {
+  .q-big.long { font-size: calc(21px * var(--ts)); }
   .note-images { grid-template-columns: repeat(5, minmax(0, 1fr)); }
   .note-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .folder-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }

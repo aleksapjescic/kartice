@@ -7,8 +7,11 @@ Adresa: https://aleksapjescic.github.io/kartice/
 ## Šta ume
 
 - špilovi kartica sa praćenjem naučenog, učenje po redu ili nasumično, prevlačenje na telefonu
+- slike uz pitanje i odgovor, učenje obrnuto (odgovor → pitanje), „Poništi” poslednji odgovor, pretraga kartica
 - kvizovi sa ponuđenim odgovorima: unos pitanja ili uvoz iz teksta, praćenje naučenog, ponavljanje netačnih i spisak grešaka
-- beleške: tekstualne, PDF (listanje stranica kao u knjizi) i Word .docx (u bojama izabrane teme)
+- beleške: tekstualne, PDF (listanje kao u knjizi ili skrolovanje, zumiranje u oba režima) i Word .docx (u bojama izabrane teme)
+- pretraga beleški pretražuje i tekst u PDF i Word dokumentima; pogodak u PDF-u otvara pravu stranu
+- kartica od označenog teksta u belešci
 - folderi za beleške, premeštanje beleški između foldera
 - podešavanja: tema, font, veličina teksta, jezik (latinica, ćirilica, engleski), smanjene animacije, tamne PDF stranice
 - rezervna kopija svih podataka u jedan .json fajl i vraćanje iz nje
