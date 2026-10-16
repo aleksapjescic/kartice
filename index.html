@@ -93,6 +93,26 @@ body.has-fs { --top: 56px; }
 /* iOS aplikacija sa početnog ekrana: prikaz počinje ispod statusne trake (koju iOS boji
    bojom teme), pa je dovoljan mali razmak gore */
 body.ios-app { --top: 12px; --head-top: 0px; }
+
+/* načini rasporeda za isprobavanje na iPhone-u (bira se u dijagnostici) */
+html.layout-b #app { height: 100lvh; }
+html.layout-c, html.layout-c body { overflow: visible; }
+html.layout-c #app { position: fixed; top: 0; left: 0; right: 0; height: var(--scr-h, 100dvh); }
+html.layout-d, html.layout-d body { overflow: visible; }
+html.layout-d #app { height: calc(100dvh + env(safe-area-inset-top, 0px)); }
+
+/* dijagnostika */
+body.diag-on #app { outline: 3px solid #E5484D; outline-offset: -3px; }
+.diag {
+  position: fixed; z-index: 30; left: 12px; right: 12px; top: calc(env(safe-area-inset-top, 0px) + 12px);
+  max-height: 75%; overflow: auto; box-sizing: border-box; padding: 14px; border-radius: 16px;
+  background: var(--card); border: 1px solid var(--strong); color: var(--ink);
+  font: 12px/1.5 ui-monospace, Menlo, Consolas, monospace;
+}
+.diag pre { margin: 0 0 10px; white-space: pre-wrap; }
+.diag .seg button { height: 36px; font-size: 14px; font-family: var(--font); }
+.diag .btn { height: 40px; font-size: 14px; font-family: var(--font); margin-top: 8px; width: 100%; }
+.ver { border: 0; background: transparent; padding: 0; font-size: 13px; color: var(--muted); }
 .screen {
   position: relative; width: 100%; max-width: 560px; height: 100%; box-sizing: border-box;
   display: flex; flex-direction: column; gap: 20px; padding-block: var(--top) var(--bottom);
@@ -417,7 +437,7 @@ var BUILTIN_NOTES = [
 ];
 
 // Pri svakom objavljivanju povećati broj i isti upisati u version.json
-var APP_VERSION = 7;
+var APP_VERSION = 8;
 
 var STORE_KEY = 'kartice.v1';
 
@@ -515,7 +535,7 @@ function viewHome() {
     (notesTab ? viewNotesList()
       : '<div class="decks">' + list + (ui.manage ? '' : '<button class="deck add-deck btn" data-act="newDeck">+ Novi špil</button>') + '</div>') +
     '<div class="spacer"></div>' +
-    '<div class="field"><div class="row-between"><span class="label">Tema</span><span class="label">Verzija ' + APP_VERSION + '</span></div>' +
+    '<div class="field"><div class="row-between"><span class="label">Tema</span><button class="ver" data-act="diag">Verzija ' + APP_VERSION + '</button></div>' +
     seg('theme', [['auto', 'Sistem'], ['tamna', 'Tamna'], ['svetla', 'Svetla'], ['plava', 'Plava']], data.theme) + '</div>' +
     '</div>';
 }
@@ -1089,6 +1109,69 @@ function applyUpdate() {
 document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') checkUpdate(); });
 window.addEventListener('pageshow', checkUpdate);
 setTimeout(checkUpdate, 1500);
+
+/* ---------- raspored i dijagnostika (privremeno, dok ne pronađemo šta radi na iPhone-u) ---------- */
+var LAYOUT_KEY = 'kartice.layout';
+function setScreenH() {
+  var land = window.matchMedia('(orientation: landscape)').matches;
+  var h = land ? Math.min(screen.width, screen.height) : Math.max(screen.width, screen.height);
+  document.documentElement.style.setProperty('--scr-h', h + 'px');
+}
+function applyLayout(m) {
+  ['a', 'b', 'c', 'd'].forEach(function (k) { document.documentElement.classList.toggle('layout-' + k, k === m && k !== 'a'); });
+  setScreenH();
+}
+var layoutMode = 'a';
+try { layoutMode = localStorage.getItem(LAYOUT_KEY) || 'a'; } catch (e) {}
+applyLayout(layoutMode);
+window.addEventListener('resize', function () { setScreenH(); if (document.querySelector('.diag')) fillDiag(); });
+
+function measure(css) {
+  var d = document.createElement('div');
+  d.style.cssText = 'position:fixed;left:0;top:0;width:1px;visibility:hidden;pointer-events:none;' + css;
+  document.body.appendChild(d);
+  var h = d.getBoundingClientRect().height; d.remove();
+  return Math.round(h);
+}
+function fillDiag() {
+  var box = document.querySelector('.diag'); if (!box) return;
+  var vv = window.visualViewport, r = document.getElementById('app').getBoundingClientRect();
+  var meta = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
+  var lines = [
+    'Verzija ' + APP_VERSION + ' · raspored ' + layoutMode.toUpperCase(),
+    'standalone: ' + (navigator.standalone === true),
+    'ekran: ' + screen.width + ' × ' + screen.height,
+    'prozor: ' + window.innerWidth + ' × ' + window.innerHeight,
+    'clientHeight: ' + document.documentElement.clientHeight,
+    'visualViewport: ' + (vv ? Math.round(vv.height) + ' (pomak ' + Math.round(vv.offsetTop) + ')' : '—'),
+    '100vh ' + measure('height:100vh') + ' · dvh ' + measure('height:100dvh') + ' · svh ' + measure('height:100svh') + ' · lvh ' + measure('height:100lvh'),
+    'safe-area gore ' + measure('height:env(safe-area-inset-top,0px)') + ' · dole ' + measure('height:env(safe-area-inset-bottom,0px)'),
+    'aplikacija: od ' + Math.round(r.top) + ' do ' + Math.round(r.bottom),
+    'statusna traka: ' + (meta ? meta.content : '—')
+  ];
+  box.querySelector('pre').textContent = lines.join('\n');
+  box.querySelectorAll('[data-act="layout"]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.arg === layoutMode)); });
+}
+function toggleDiag() {
+  var box = document.querySelector('.diag');
+  if (box) { box.remove(); document.body.classList.remove('diag-on'); return; }
+  box = document.createElement('div');
+  box.className = 'diag';
+  box.innerHTML = '<pre></pre>' +
+    '<div style="font-family:var(--font);font-size:13px;color:var(--muted);margin-bottom:8px">Crveni okvir pokazuje gde se aplikacija završava. Isprobaj A, B, C i D i javi koji ide do samog dna.</div>' +
+    seg('layout', [['a', 'A'], ['b', 'B'], ['c', 'C'], ['d', 'D']], layoutMode) +
+    '<button class="btn" data-act="diag">Zatvori</button>';
+  document.body.appendChild(box);
+  document.body.classList.add('diag-on');
+  fillDiag();
+}
+acts.diag = toggleDiag;
+acts.layout = function (m) {
+  layoutMode = m;
+  try { localStorage.setItem(LAYOUT_KEY, m); } catch (e) {}
+  applyLayout(m);
+  setTimeout(fillDiag, 50);
+};
 
 render();
 </script>
