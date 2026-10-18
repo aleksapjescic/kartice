@@ -15,9 +15,58 @@ var AI_MODELS = [
 var AI_MAX_PDF = 32 * 1048576, AI_MAX_PAGES = 600;
 
 function aiKey() { try { return localStorage.getItem(AI_KEY) || ''; } catch (e) { return ''; } }
-function aiProvider() { return data.settings.aiProvider === 'gemini' ? 'gemini' : 'claude'; }
-function aiReady() { return aiProvider() === 'gemini' ? !!geminiKey() : !!aiKey(); }
+
+/* Izvor ključa: 'own' = tvoj ključ na ovom uređaju (Claude ili Gemini), 'app' = ključ aplikacije preko
+   servera (supabase/functions/ai, uvek Gemini), za prijavljene, sa dnevnim limitom koji zadaje admin.
+   Izbor se pamti po uređaju, kao i ključevi. Dok nije izabrano: tvoj ključ ako postoji, inače aplikacijin. */
+var AI_SOURCE = 'kartice.aiSource';
+function appAiConfigured() { return typeof syncConfigured === 'function' && syncConfigured(); }
+function aiKeySource() {
+  if (!appAiConfigured()) return 'own';
+  var v = ''; try { v = localStorage.getItem(AI_SOURCE) || ''; } catch (e) {}
+  if (v === 'app' || v === 'own') return v;
+  return aiKey() || geminiKey() ? 'own' : 'app';
+}
+function aiSetSource(v) {
+  try { localStorage.setItem(AI_SOURCE, v === 'app' ? 'app' : 'own'); } catch (e) {}
+  if (v === 'app' && typeof sync !== 'undefined' && sync.user && typeof syncLoadProfile === 'function') syncLoadProfile();
+  render(true);
+}
+function aiProvider() { return aiKeySource() === 'app' || data.settings.aiProvider === 'gemini' ? 'gemini' : 'claude'; }
+// za ključ aplikacije dovoljna je prijava; blokadu, prekidač i limit proverava server i javlja jasnu poruku
+function aiReady() {
+  if (aiKeySource() === 'app') return !!(typeof sync !== 'undefined' && sync.user);
+  return aiProvider() === 'gemini' ? !!geminiKey() : !!aiKey();
+}
 function aiName() { return aiProvider() === 'gemini' ? 'Gemini' : 'Claude'; }
+
+// poziv preko servera aplikacije; odgovor je isti kao od Gemini API-ja
+async function appAiFetch(body) {
+  var c = await syncClient(), s = (await c.auth.getSession()).data.session;
+  if (!s) throw { app: true, reason: 'auth' };
+  var r;
+  try {
+    r = await fetch(SUPABASE_URL.replace(/\/+$/, '') + '/functions/v1/ai', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + s.access_token, apikey: SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+  } catch (e) { throw { app: true, reason: navigator.onLine ? 'upstream' : 'offline' }; }
+  var j = null;
+  try { j = await r.json(); } catch (e) {}
+  var used = r.headers.get('x-ai-used'), lim = r.headers.get('x-ai-limit');
+  if (sync.ai && used !== null && used !== '') { sync.ai.used = +used; sync.ai.limit = lim ? +lim : null; }
+  if (!r.ok) {
+    if (j && typeof j.error === 'string') {
+      if (sync.ai && j.error === 'limit') { sync.ai.used = j.used; sync.ai.limit = j.limit; }
+      if (sync.ai && j.error === 'blocked') sync.ai.blocked = true;
+      if (sync.ai && j.error === 'disabled') sync.ai.on = false;
+      throw { app: true, reason: j.error, status: r.status, used: j.used, limit: j.limit };
+    }
+    throw { app: true, gemini: true, status: r.status, message: (j && j.error && j.error.message) || r.statusText || '' };
+  }
+  return j;
+}
 
 /* ---------- Gemini ----------
    Spisak modela se učitava tvojim ključem (Proveri ključ), pa se ne oslanja na ime modela koje bi
@@ -29,6 +78,7 @@ function geminiKey() { try { return localStorage.getItem(GEMINI_KEY) || ''; } ca
 function geminiModels() { try { return JSON.parse(localStorage.getItem(GEMINI_LIST) || '[]'); } catch (e) { return []; } }
 function geminiModel() { return data.settings.geminiModel || (geminiModels()[0] || {}).id || 'gemini-2.5-flash'; }
 async function geminiFetch(path, body) {
+  if (body && aiKeySource() === 'app') return appAiFetch(body);
   var r = await fetch(GEMINI_API + path, {
     method: body ? 'POST' : 'GET',
     headers: body ? { 'x-goog-api-key': geminiKey(), 'Content-Type': 'application/json' } : { 'x-goog-api-key': geminiKey() },
@@ -117,6 +167,20 @@ function aiUsageAdd(usd, tokens) {
 function aiErrorText(e) {
   var st = e && e.status;
   if (e && e.refusal) return t('{ai} je odbio ovaj zahtev. Probaj sa drugim delom materijala.', { ai: aiName() });
+  if (e && e.app && e.reason) {
+    if (e.reason === 'auth') return t('Prijavi se da koristiš AI bez svog ključa.');
+    if (e.reason === 'blocked') return t('Tvoj nalog je blokiran za AI aplikacije. Možeš da upišeš svoj ključ u Podešavanja → AI asistent.');
+    if (e.reason === 'disabled') return t('Besplatan AI je trenutno isključen. Upiši svoj ključ u Podešavanja → AI asistent.');
+    if (e.reason === 'limit') return t('Potrošio si današnji limit ({n}). Sutra se obnavlja, ili upiši svoj ključ.', { n: e.limit || 0 });
+    if (e.reason === 'too_big') return t('Materijal je prevelik. Izaberi manje strana.');
+    if (e.reason === 'offline') return t('Nema veze sa internetom.');
+    return t('AI aplikacije trenutno ne radi. Probaj kasnije ili upiši svoj ključ.');
+  }
+  if (e && e.app && e.gemini) {
+    if (st === 429) return t('Zajednička besplatna kvota je trenutno potrošena. Probaj kasnije ili upiši svoj ključ.');
+    if (st === 400 || st === 401 || st === 403 || st === 404) return t('AI aplikacije nije ispravno podešen. Javi administratoru.');
+    if (st >= 500) return t('Gemini je trenutno preopterećen. Probaj ponovo za par minuta.');
+  }
   if (e && e.gemini) {
     if ((st === 400 && /api key/i.test(e.message)) || st === 401) return t('Gemini ključ nije ispravan. Proveri ga u Podešavanjima → AI asistent.');
     if (st === 403) return t('Ovaj Gemini ključ nema dozvolu. U AI Studiju napravi novi ključ.');
@@ -266,6 +330,14 @@ function aiClean(out, o, cost, tokens) {
 
 /* ---------- tok: prozor za izbor → pravljenje → pregled → dodavanje ---------- */
 function aiNeedKey() {
+  if (aiKeySource() === 'app') {
+    modal({ title: t('Prijavi se za AI'), text: t('AI radi bez tvog ključa kad si prijavljen. Može i sa tvojim ključem, u Podešavanja → AI asistent.'),
+      buttons: [{ label: t('Prijavi se sa Google-om'), kind: 'primary', onClick: function () { syncGoogle(); } },
+        { label: t('Prijava e-mail kodom'), kind: 'plain', onClick: function () { ui.screen = 'settings'; render(); setTimeout(function () { var el = document.getElementById('syncEmail'); if (el) { el.scrollIntoView({ block: 'center' }); el.focus(); } }, 50); } },
+        { label: t('Upiši svoj ključ'), kind: 'plain', onClick: function () { aiSetSource('own'); ui.screen = 'settings'; render(); setTimeout(function () { var el = document.getElementById('aiSourceSeg'); if (el) el.scrollIntoView({ block: 'center' }); }, 50); } },
+        { label: t('Otkaži'), kind: 'cancel' }] });
+    return;
+  }
   modal({ title: t('AI asistent nije podešen'), text: t('Izaberi Claude ili Gemini i upiši ključ u Podešavanja → AI asistent. Ključ ostaje samo na ovom uređaju.'),
     buttons: [{ label: t('Otvori podešavanja'), kind: 'primary', onClick: function () { ui.screen = 'settings'; render(); setTimeout(function () { var el = document.getElementById('aiKeyInput'); if (el) el.scrollIntoView({ block: 'center' }); }, 50); } },
       { label: t('Otkaži'), kind: 'cancel' }] });
@@ -281,7 +353,11 @@ function aiStart(noteId, target) {
   ];
   if (x.type === 'pdf') fields.push({ id: 'range', label: t('Strane (prazno = ceo dokument)'), value: '', placeholder: x.pages ? '1–' + x.pages : t('npr. 1-10') });
   fields.push({ id: 'hint', label: t('Dodatno uputstvo (nije obavezno)'), value: '', placeholder: t('npr. samo definicije, teže pitanja…'), multiline: true, rows: 2 });
-  var info = aiProvider() === 'gemini'
+  var a = sync.ai;
+  var info = aiKeySource() === 'app'
+    ? (a && a.limit != null ? t('AI aplikacije (Gemini). Danas: {u} / {l} poziva.', { u: a.used || 0, l: a.limit }) : t('AI aplikacije (Gemini).')) +
+      ' ' + t('Google sme da koristi poslat materijal za unapređenje modela.')
+    : aiProvider() === 'gemini'
     ? t('Model: {m} (Gemini). Besplatni nivo ima dnevno ograničenje, a Google sme da koristi poslat materijal za unapređenje modela.', { m: geminiModel() })
     : t('Model: {m}. Plaća se sa tvog Anthropic naloga; cena se vidi posle pravljenja.', { m: aiModel().name });
   modal({
@@ -427,10 +503,27 @@ async function aiExplain() {
 
 /* ---------- podešavanja ---------- */
 function aiSettingsSection() {
-  var gem = aiProvider() === 'gemini';
+  var src = aiKeySource(), gem = aiProvider() === 'gemini';
   return '<div class="section"><h2>' + t('AI asistent') + '</h2>' +
-    seg('setProvider', [['claude', 'Claude'], ['gemini', 'Gemini']], aiProvider()) +
-    (gem ? geminiSettings() : claudeSettings()) + '</div>';
+    (appAiConfigured() ? '<div id="aiSourceSeg">' + seg('setAiSource', [['app', t('Ključ aplikacije')], ['own', t('Moj ključ')]], src) + '</div>' : '') +
+    (src === 'app' ? appAiSettings()
+      : seg('setProvider', [['claude', 'Claude'], ['gemini', 'Gemini']], aiProvider()) + (gem ? geminiSettings() : claudeSettings())) +
+    '</div>';
+}
+// ključ aplikacije: stanje naloga i današnja potrošnja
+function appAiSettings() {
+  var note = '<p class="small-note">' + t('AI pravi kartice i pitanja iz tvojih beleški i objašnjava odgovore, bez tvog ključa (Gemini preko servera aplikacije). Google sme da koristi poslat materijal za unapređenje svojih modela, pa ne šalji ništa privatno.') + '</p>';
+  if (!sync.user) {
+    return note + '<p class="small-note">' + t('Za ovo se prijavi na nalog, gore u odeljku Nalog i sinhronizacija.') + '</p>' +
+      '<button class="btn small google-btn" data-act="syncGoogle">' + ICON_GOOGLE + t('Prijavi se sa Google-om') + '</button>';
+  }
+  var a = sync.ai, line;
+  if (!a) line = t('Učitavam stanje naloga…');
+  else if (a.blocked) line = t('Tvoj nalog je blokiran za AI aplikacije. Možeš da koristiš svoj ključ.');
+  else if (!a.on) line = t('Besplatan AI je trenutno isključen. Možeš da koristiš svoj ključ.');
+  else if (a.limit == null) line = t('Danas: {u} poziva (administrator, bez limita).', { u: a.used || 0 });
+  else line = t('Danas: {u} / {l} poziva. Limit se obnavlja svakog dana.', { u: a.used || 0, l: a.limit });
+  return note + '<p class="small-note num">' + line + '</p>';
 }
 function keyRow(key) {
   return '<div class="row-between"><span class="small-note">' + t('Ključ: {k}', { k: esc(key.slice(0, 8) + '…' + key.slice(-4)) }) + '</span>' +

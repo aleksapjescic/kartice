@@ -27,7 +27,7 @@ var KATEX_FONTS = [
   'KaTeX_Typewriter-Regular.woff2'
 ];
 var FILES = [
-  './', './index.html', './styles.css', './data.js', './i18n.js', './store.js', './srs.js', './markup.js', './stats.js', './ai.js', './config.js', './sync.js', './app.js',
+  './', './index.html', './styles.css', './data.js', './i18n.js', './store.js', './srs.js', './markup.js', './stats.js', './ai.js', './config.js', './sync.js', './admin.js', './app.js',
   './manifest.json', './icon-192.png', './icon-512.png', './apple-touch-icon.png',
   './vendor/pdf.min.js', './vendor/pdf.worker.min.js', './vendor/mammoth.browser.min.js', './vendor/page-flip.browser.js',
   './vendor/ts-fsrs.umd.js', './vendor/katex/katex.min.js', './vendor/katex/katex.min.css', './vendor/supabase.min.js'

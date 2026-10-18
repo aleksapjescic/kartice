@@ -3,7 +3,7 @@
    Pri svakom objavljivanju: povećati APP_VERSION, isti broj upisati u version.json
    i u ?v= parametre u index.html. */
 
-var APP_VERSION = 14;
+var APP_VERSION = 15;
 
 /* ---------- pomoćne funkcije ---------- */
 function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
@@ -913,7 +913,7 @@ function viewSettings() {
 var app = document.getElementById('app');
 var VIEWS = { home: viewHome, deck: viewDeck, cards: viewStudy, done: viewDone, edit: viewEdit, folder: viewFolder, stats: viewStats, aiReview: viewAiReview,
   noteRead: viewNoteRead, noteEdit: viewNoteEdit, docx: viewDocx, pdf: viewPdf, image: viewImage, settings: viewSettings,
-  quiz: viewQuiz, quizPlay: viewQuizPlay, quizDone: viewQuizDone, quizEdit: viewQuizEdit };
+  quiz: viewQuiz, quizPlay: viewQuizPlay, quizDone: viewQuizDone, quizEdit: viewQuizEdit, admin: viewAdmin };
 
 function applyTheme() {
   var b = document.body, s = data.settings;
@@ -2627,9 +2627,17 @@ var acts = {
   },
   aiSaveKey: aiSaveKey, aiCheckKey: aiCheckKey, aiDelKey: aiDelKey,
   setProvider: function (v) { data.settings.aiProvider = v === 'gemini' ? 'gemini' : 'claude'; save(); render(true); },
+  setAiSource: aiSetSource,
+  // admin panel (admin.js)
+  openAdmin: adminOpen,
+  adminReload: function () { adm.users = null; render(true); adminLoad(); },
+  adminToggleShared: function () { if (adm.cfg) adminConfig({ shared_key_on: !adm.cfg.shared_key_on }, adm.cfg.shared_key_on ? t('Besplatan AI je isključen') : t('Besplatan AI je uključen')); },
+  adminDefLimit: adminDefLimit,
+  adminModel: adminModel,
+  adminUser: adminUser,
   explain: aiExplain,
   // nalog i sinhronizacija (sync.js)
-  syncSendCode: syncSendCode, syncVerify: syncVerify, syncSignOut: syncSignOut,
+  syncSendCode: syncSendCode, syncVerify: syncVerify, syncSignOut: syncSignOut, syncGoogle: syncGoogle,
   syncReset: function () { sync.sent = null; render(true); },
   remindToggle: function () { if (data.settings.remind) remindOff(); else remindOn(); },
   syncNow: function () { sync.error = ''; syncNow(); },
@@ -2841,6 +2849,7 @@ document.addEventListener('input', function (e) {
     return;
   }
   if (tg.id === 'noteSearch') { searchNotes(tg.value); return; }
+  if (tg.id === 'adminSearch') { adminFilter(tg.value); return; }
   if (tg.dataset.quiz || tg.dataset.qq || tg.dataset.qopt) {
     var z = quiz(); if (!z) return;
     if (tg.dataset.quiz) z[tg.dataset.quiz] = tg.value;

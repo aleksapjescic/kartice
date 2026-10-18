@@ -194,6 +194,37 @@ async function test(name, fn) {
     check(c.syncDiff().length === 0, 'posle sinhronizacije nema ničeg za slanje');
   });
 
+  /* ---------- AI: tvoj ključ ili ključ aplikacije ---------- */
+  await test('AI: izvor ključa i poruke za ključ aplikacije', function () {
+    var c = makeContext();
+    vm.runInContext(src('ai.js') + '\ndata = normalize({ decks: [defaultDeck()], schema: 2 });', c);
+    check(c.aiKeySource() === 'own', 'bez Supabase-a uvek svoj ključ');
+    vm.runInContext('var SUPABASE_URL = "https://x.supabase.co", SUPABASE_ANON_KEY = "anon";', c);
+    check(c.aiKeySource() === 'app', 'bez svog ključa: ključ aplikacije');
+    check(c.aiProvider() === 'gemini', 'ključ aplikacije je uvek Gemini');
+    check(!c.aiReady(), 'bez prijave nije spremno');
+    c.sync.user = { id: 'u1' };
+    check(c.aiReady(), 'prijavljen: spremno');
+    c.localStorage.setItem('kartice.geminiKey', 'AIzaSyTESTTESTTESTTESTTESTTEST');
+    check(c.aiKeySource() === 'own', 'sa svojim ključem: podrazumevano svoj');
+    c.sync.user = null;
+    c.aiSetSource('app');
+    check(c.aiKeySource() === 'app', 'izabran ključ aplikacije se pamti');
+    c.aiSetSource('own');
+    check(c.aiKeySource() === 'own', 'izabran svoj ključ se pamti');
+    check(!c.aiReady(), 'svoj ključ: Claude bez Claude ključa nije spreman');
+    c.data.settings.aiProvider = 'gemini';
+    check(c.aiReady(), 'svoj ključ: Gemini sa Gemini ključem je spreman');
+    var e = c.aiErrorText;
+    check(/\(20\)/.test(e({ app: true, reason: 'limit', limit: 20 })), 'limit sa brojem');
+    check(/blokiran/.test(e({ app: true, reason: 'blocked' })), 'blokiran');
+    check(/isključen/.test(e({ app: true, reason: 'disabled' })), 'isključen');
+    check(/Prijavi se/.test(e({ app: true, reason: 'auth' })), 'nije prijavljen');
+    check(/kvota/.test(e({ app: true, gemini: true, status: 429 })), 'zajednička kvota');
+    check(/administratoru/.test(e({ app: true, gemini: true, status: 404 })), 'pogrešan model kod admina');
+    check(/Gemini ključ nije ispravan/.test(e({ gemini: true, status: 401, message: '' })), 'svoj Gemini ključ: kao ranije');
+  });
+
   /* ---------- service worker ---------- */
   await test('Service worker: mreža, keš, čekanje', async function () {
     var code = src('sw.js').replace('var NET_WAIT = 3000;', 'var NET_WAIT = 60;');

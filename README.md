@@ -10,8 +10,8 @@ Adresa: https://aleksapjescic.github.io/kartice/
 - slobodno učenje: sve ili samo nenaučene, po redu ili nasumično, prevlačenje na telefonu, kucanje odgovora
 - **statistika**: dani zaredom, dnevni cilj, kalendar učenja, odgovori po danima, prognoza ponavljanja, najteže kartice, značke
 - **formatiranje** u karticama, kvizovima i beleškama (podebljano, kurziv, označeno, liste, formule), kartice sa prazninama, čitanje naglas
-- **AI asistent** (Claude, tvoj API ključ): kartice i pitanja za kviz iz beleški, PDF-a, Word-a i slika, „Objasni mi” na kartici
-- **nalog i sinhronizacija** (Supabase): ista e-mail adresa na telefonu i računaru, prijava kodom; dnevni podsetnik (vidi `supabase/README.md`)
+- **AI asistent**: kartice i pitanja za kviz iz beleški, PDF-a, Word-a i slika, „Objasni mi” na kartici; radi sa tvojim ključem (Claude ili Gemini) ili, za prijavljene, sa ključem aplikacije uz dnevni limit
+- **nalog i sinhronizacija** (Supabase): prijava Google-om ili kodom na e-mail, isti nalog na telefonu i računaru; dnevni podsetnik; **admin panel** za korisnike, limite i ključ aplikacije (vidi `supabase/README.md`)
 - slike uz pitanje i odgovor, učenje obrnuto (odgovor → pitanje), „Poništi” poslednji odgovor, pretraga kartica
 - kvizovi sa ponuđenim odgovorima: unos pitanja ili uvoz iz teksta, praćenje naučenog, ponavljanje netačnih i spisak grešaka
 - beleške: tekstualne, PDF (listanje kao u knjizi ili skrolovanje, zumiranje u oba režima) i Word .docx (u bojama izabrane teme)
@@ -32,9 +32,10 @@ Adresa: https://aleksapjescic.github.io/kartice/
 | `srs.js` | raspored ponavljanja (FSRS) i red za danas |
 | `stats.js` | statistika, dani zaredom, značke, ekran Statistika |
 | `markup.js` | formatiranje teksta, formule, praznine, čitanje naglas |
-| `ai.js` | AI asistent (Claude) |
-| `sync.js`, `config.js` | nalog, sinhronizacija i podsetnici (Supabase) |
-| `supabase/` | šema baze, funkcija za podsetnike i uputstvo za podešavanje |
+| `ai.js` | AI asistent (Claude ili Gemini, tvoj ključ ili ključ aplikacije) |
+| `sync.js`, `config.js` | nalog (Google ili e-mail kod), sinhronizacija i podsetnici (Supabase) |
+| `admin.js` | admin panel: korisnici, limiti, ključ aplikacije |
+| `supabase/` | šema baze, funkcije za podsetnike i AI (`functions/ai`) i uputstvo za podešavanje |
 | `tests/run.js` | testovi bez pregledača: `node tests/run.js` |
 | `i18n.js` | jezici: natpisi, ćirilica, engleski prevod |
 | `data.js` | početni špil i beleške iz materijala |

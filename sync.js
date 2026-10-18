@@ -8,14 +8,16 @@
 var SYNC_META = 'syncMeta';
 var SYNC_SETTINGS = ['font', 'size', 'lang', 'reduceMotion', 'pdfDark', 'pdfMode', 'newPerDay', 'maxReviews', 'retention', 'goal',
   'ttsAuto', 'ttsRate', 'aiProvider', 'aiModel', 'geminiModel', 'typeAnswer', 'remindAt'];
-var sync = { client: null, user: null, meta: null, timer: null, running: null, again: false, status: '', error: '', sent: null };
+// ai: stanje za AI preko ključa aplikacije iz touch_profile { role, blocked, on, used, limit } (null dok se ne učita)
+var sync = { client: null, user: null, meta: null, timer: null, running: null, again: false, status: '', error: '', sent: null, ai: null };
 
 function syncConfigured() { return typeof SUPABASE_URL === 'string' && !!SUPABASE_URL && typeof SUPABASE_ANON_KEY === 'string' && !!SUPABASE_ANON_KEY; }
 async function syncClient() {
   if (!sync.client) {
     await loadScript('vendor/supabase.min.js');
     sync.client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false, storageKey: 'kartice.auth' }
+      // pkce: posle prijave Google-om Supabase vraća ?code= u adresi, a klijent ga sam razmeni za sesiju
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'pkce', storageKey: 'kartice.auth' }
     });
   }
   return sync.client;
@@ -315,21 +317,61 @@ async function syncFetchFile(id) {
 /* ---------- pokretanje i prijava ---------- */
 async function syncBoot() {
   if (!syncConfigured()) return;
+  var back = syncOAuthReturn();
   try {
     var c = await syncClient(), r = await c.auth.getSession();
     sync.user = r.data && r.data.session ? r.data.session.user : null;
+    syncCleanUrl();
     c.auth.onAuthStateChange(function (ev, session) {
       var u = session ? session.user : null, was = sync.user;
       sync.user = u;
-      if (u && (!was || was.id !== u.id)) syncLoadMeta().then(syncNow);
-      if (ui.screen === 'settings') render(true);
+      if (u && (!was || was.id !== u.id)) { syncLoadMeta().then(syncNow); syncLoadProfile(); }
+      if (!u) sync.ai = null;
+      if (/^(settings|admin)$/.test(ui.screen)) render(true);
     });
-    if (sync.user) { await syncLoadMeta(); syncNow(); }
-  } catch (e) { sync.error = (e && e.message) || ''; }
+    if (sync.user) { await syncLoadMeta(); syncNow(); syncLoadProfile(); }
+    if (back.error) toast(t('Prijava sa Google-om nije uspela: {m}', { m: back.error }));
+    else if (back.code && sync.user) { ui.screen = 'settings'; render(); toast(t('Prijavljen si. Sinhronizujem…')); }
+  } catch (e) { sync.error = (e && e.message) || ''; syncCleanUrl(); }
   setInterval(function () { if (sync.user && document.visibilityState === 'visible') syncNow(); }, 60000);
   window.addEventListener('online', function () { if (sync.user) syncNow(); });
   document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible' && sync.user) syncNow(); });
 }
+// Google "G" u bojama (zvanični oblik znaka), za dugme za prijavu
+var ICON_GOOGLE = '<svg class="g-logo" width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">' +
+  '<path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>' +
+  '<path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>' +
+  '<path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>' +
+  '<path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>';
+// povratak sa Google prijave: ?code=… (uspeh) ili ?error_description=… (otkazano ili greška)
+function syncOAuthReturn() {
+  var q = new URLSearchParams(location.search), h = new URLSearchParams(location.hash.replace(/^#/, ''));
+  return { code: q.get('code'), error: q.get('error_description') || h.get('error_description') || '' };
+}
+function syncCleanUrl() {
+  if (/[?&](code|error|error_description)=/.test(location.search) || /error_description=/.test(location.hash)) {
+    try { history.replaceState(null, '', location.pathname); } catch (e) {}
+  }
+}
+// Prijava Google-om: stranica ode na Google i vrati se ovde (Supabase → Authentication → URL Configuration)
+async function syncGoogle() {
+  try {
+    await Promise.resolve(saveNow());   // stranica odlazi na Google, pa se sve prvo sačuva
+    var c = await syncClient();
+    var r = await c.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname, queryParams: { prompt: 'select_account' } } });
+    if (r.error) throw r.error;
+  } catch (e) { toast(t('Prijava sa Google-om nije uspela: {m}', { m: (e && e.message) || '' })); }
+}
+// uloga, blokada i dnevni limit za AI preko ključa aplikacije; usput beleži poslednju aktivnost
+async function syncLoadProfile() {
+  try {
+    var c = await syncClient(), r = await c.rpc('touch_profile');
+    if (r.error) throw r.error;
+    sync.ai = r.data;
+  } catch (e) { sync.ai = null; }
+  if (/^(settings|admin)$/.test(ui.screen)) render(true);
+}
+function syncIsAdmin() { return !!(sync.user && sync.ai && sync.ai.role === 'admin'); }
 async function syncSendCode() {
   var el = document.getElementById('syncEmail'), email = el ? el.value.trim() : '';
   if (!/^\S+@\S+\.\S+$/.test(email)) { toast(t('Upiši ispravnu e-mail adresu.')); if (el) el.focus(); return; }
@@ -354,7 +396,7 @@ function syncSignOut() {
   modal({ title: t('Odjaviti se?'), text: t('Podaci ostaju na ovom uređaju, ali se više ne sinhronizuju dok se ponovo ne prijaviš.'), buttons: [
     { label: t('Odjavi se'), kind: 'danger', onClick: function () {
       syncClient().then(function (c) { return c.auth.signOut(); }).then(function () {
-        sync.user = null; sync.meta = null;
+        sync.user = null; sync.meta = null; sync.ai = null;
         idb('state', 'readwrite', function (st) { return st.delete(SYNC_META); }).catch(function () {});
         render(true);
       });
@@ -378,16 +420,19 @@ function syncSettingsSection() {
     body = '<p class="small-note">' + t('Prijavljen kao {e}', { e: esc(sync.user.email || '') }) + '</p>' +
       '<p class="small-note num" id="syncStatus">' + esc(syncStatusText()) + '</p>' +
       '<div class="row-btns even"><button class="btn small" data-act="syncNow">' + t('Sinhronizuj sada') + '</button>' +
-      '<button class="btn small" data-act="syncSignOut">' + t('Odjavi se') + '</button></div>';
+      '<button class="btn small" data-act="syncSignOut">' + t('Odjavi se') + '</button></div>' +
+      (syncIsAdmin() ? '<button class="btn small" data-act="openAdmin">' + t('Admin panel') + '</button>' : '');
   } else if (sync.sent) {
     body = '<p class="small-note">' + t('Poslali smo kod na {e}. Upiši ga ovde (stiže za minut, proveri i neželjenu poštu).', { e: esc(sync.sent) }) + '</p>' +
       '<input class="input" id="syncCode" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" aria-label="' + esc(t('Kod iz e-mail poruke')) + '">' +
       '<div class="row-btns even"><button class="btn small primary" data-act="syncVerify">' + t('Prijavi se') + '</button>' +
       '<button class="btn small" data-act="syncReset">' + t('Druga adresa') + '</button></div>';
   } else {
-    body = '<p class="small-note">' + t('Prijavi se istom e-mail adresom na telefonu i računaru i sve se sinhronizuje samo: kartice, napredak, beleške, fajlovi i statistika. Lozinka ne treba, stiže ti kod.') + '</p>' +
+    body = '<p class="small-note">' + t('Prijavi se istim nalogom na telefonu i računaru i sve se sinhronizuje samo: kartice, napredak, beleške, fajlovi i statistika. Sa nalogom AI radi i bez tvog ključa.') + '</p>' +
+      '<button class="btn small google-btn" data-act="syncGoogle">' + ICON_GOOGLE + t('Prijavi se sa Google-om') + '</button>' +
+      '<p class="small-note">' + t('Ili bez Google-a: upiši e-mail i stiže ti kod, lozinka ne treba.') + '</p>' +
       '<input class="input" id="syncEmail" type="email" autocomplete="email" placeholder="ime@primer.com" aria-label="' + esc(t('E-mail adresa')) + '">' +
-      '<button class="btn small primary" data-act="syncSendCode">' + t('Pošalji kod') + '</button>';
+      '<button class="btn small" data-act="syncSendCode">' + t('Pošalji kod') + '</button>';
   }
   return '<div class="section"><h2>' + t('Nalog i sinhronizacija') + '</h2>' + body + '</div>';
 }
