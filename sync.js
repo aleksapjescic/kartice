@@ -169,7 +169,8 @@ function syncAfterSave() {
   sync.timer = setTimeout(syncNow, 3000);
 }
 function syncNow() {
-  if (!sync.user || !navigator.onLine) return Promise.resolve();
+  // posle nove prijave lokalni podaci se prvo brišu (syncFreshStart); do tada se ništa ne šalje na nalog
+  if (!sync.user || !navigator.onLine || sync.resetting || syncFreshPending()) return Promise.resolve();
   if (sync.running) { sync.again = true; return sync.running; }
   sync.running = syncRun().catch(function (e) {
     sync.error = (e && e.message) || String(e);
@@ -331,9 +332,12 @@ async function syncBoot() {
     // greška pri osvežavanju (bez interneta) ne odjavljuje: ostaje sačuvana prijava
     sync.user = sess ? sess.user : (r.error && stored ? stored : null);
     syncCleanUrl();
+    // nova prijava (povratak sa Google-a): prvo brisanje lokalnih podataka, pa ponovno učitavanje
+    if (syncFreshStart()) return;
     c.auth.onAuthStateChange(function (ev, session) {
       var u = session ? session.user : null, was = sync.user;
       sync.user = u;
+      if (u && syncFreshPending()) return;   // prijava kodom: syncVerify briše lokalne podatke
       if (u && (!was || was.id !== u.id)) { syncLoadMeta().then(syncNow); syncLoadProfile(); syncLogOpen(); }
       if (!u) sync.ai = null;
       // promena naloga otvara ili zatvara ekran za prijavu
@@ -366,9 +370,29 @@ function syncCleanUrl() {
   }
 }
 // Prijava Google-om: stranica ode na Google i vrati se ovde (Supabase → Authentication → URL Configuration)
+/* Nova prijava na uređaju: lokalni podaci se brišu i sve se preuzima sa naloga. Podaci na nalogu se ne diraju:
+   ništa od starih lokalnih podataka (prethodni korisnik, podrazumevani podaci) ne stiže na nalog, jer se
+   sinhronizacija ne pokreće dok se baza ne zameni novom (syncNow). Oznaka važi 30 minuta od početka prijave. */
+var FRESH_KEY = 'kartice.freshLogin';
+function syncMarkFresh() { try { localStorage.setItem(FRESH_KEY, String(Date.now())); } catch (e) {} }
+function syncFreshPending() {
+  try { var ts = +localStorage.getItem(FRESH_KEY) || 0; return ts > 0 && Date.now() - ts < 30 * 60000; } catch (e) { return false; }
+}
+// vraća true ako je pokrenuto brisanje (stranica se ponovo učitava)
+function syncFreshStart() {
+  if (!sync.user || !syncFreshPending()) return false;
+  sync.resetting = true;
+  try { localStorage.removeItem(FRESH_KEY); } catch (e) {}
+  app.innerHTML = '<div class="screen login-gate"><div class="head login-head"><span class="eyebrow">' + t('Učenje kartica') + '</span><h1>' + t('Kartice') + '</h1></div>' +
+    '<p class="sub">' + t('Preuzimam tvoje podatke sa naloga…') + '</p></div>';
+  dbReset();
+  setTimeout(function () { location.reload(); }, 300);
+  return true;
+}
 async function syncGoogle() {
   try {
     await Promise.resolve(saveNow());   // stranica odlazi na Google, pa se sve prvo sačuva
+    syncMarkFresh();
     var c = await syncClient();
     var r = await c.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname, queryParams: { prompt: 'select_account' } } });
     if (r.error) throw r.error;
@@ -398,14 +422,15 @@ async function syncVerify() {
   var el = document.getElementById('syncCode'), code = el ? el.value.replace(/\s+/g, '') : '';
   if (!/^\d{6,8}$/.test(code)) { toast(t('Upiši kod iz e-mail poruke.')); if (el) el.focus(); return; }
   try {
+    syncMarkFresh();
     var c = await syncClient(), r = await c.auth.verifyOtp({ email: sync.sent, token: code, type: 'email' });
     if (r.error) throw r.error;
     sync.sent = null;
-    toast(t('Prijavljen si. Sinhronizujem…'));
+    if (!syncFreshStart()) toast(t('Prijavljen si. Sinhronizujem…'));
   } catch (e) { toast(t('Kod nije ispravan ili je istekao.')); }
 }
 function syncSignOut() {
-  modal({ title: t('Odjaviti se?'), text: t('Podaci ostaju na ovom uređaju, ali se više ne sinhronizuju dok se ponovo ne prijaviš.'), buttons: [
+  modal({ title: t('Odjaviti se?'), text: t('Sve što je sinhronizovano ostaje na nalogu. Pri sledećoj prijavi podaci na ovom uređaju se brišu i preuzimaju sa naloga.'), buttons: [
     { label: t('Odjavi se'), kind: 'danger', onClick: function () {
       syncClient().then(function (c) { return c.auth.signOut(); }).then(function () {
         sync.user = null; sync.meta = null; sync.ai = null;

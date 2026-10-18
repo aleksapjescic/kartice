@@ -568,7 +568,7 @@ var EN = {
   'Prijavljen si. Sinhronizujem…': 'Signed in. Syncing…',
   'Kod nije ispravan ili je istekao.': 'The code is wrong or has expired.',
   'Odjaviti se?': 'Sign out?',
-  'Podaci ostaju na ovom uređaju, ali se više ne sinhronizuju dok se ponovo ne prijaviš.': 'Your data stays on this device but won’t sync until you sign in again.',
+  'Sve što je sinhronizovano ostaje na nalogu. Pri sledećoj prijavi podaci na ovom uređaju se brišu i preuzimaju sa naloga.': 'Everything synced stays in your account. At the next sign-in the data on this device is deleted and downloaded from your account.',
   'Odjavi se': 'Sign out',
   'Sinhronizujem…': 'Syncing…',
   'Sinhronizacija nije uspela: {m}': 'Sync failed: {m}',
@@ -761,5 +761,6 @@ var EN = {
   'Obrisati podatke sa ovog uređaja?': 'Delete data on this device?',
   'Posle toga se sve preuzima sa naloga. Prijava ostaje.': 'After that everything is downloaded from your account. You stay signed in.',
   'Ovo ne može da se vrati.': 'This can’t be undone.',
-  'Obnavljam podatke sa naloga…': 'Restoring your data from your account…'
+  'Obnavljam podatke sa naloga…': 'Restoring your data from your account…',
+  'Preuzimam tvoje podatke sa naloga…': 'Downloading your data from your account…'
 };
