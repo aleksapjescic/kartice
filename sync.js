@@ -319,9 +319,17 @@ async function syncFetchFile(id) {
 async function syncBoot() {
   if (!syncConfigured()) return;
   var back = syncOAuthReturn();
+  // Sačuvana prijava otvara aplikaciju odmah; getSession ume da čeka mrežu (istekao token, a na iPhone-u
+  // aplikacija sa početnog ekrana ume da visi i po minut), pa se ono završava u pozadini.
+  var stored = syncStoredUser();
+  if (stored && !back.code) { sync.user = stored; sync.ready = true; render(true); }
+  // a ako nema sačuvane prijave, čekanje traje najviše nekoliko sekundi
+  setTimeout(function () { if (!sync.ready) { sync.ready = true; render(true); } }, back.code ? 15000 : 4000);
   try {
     var c = await syncClient(), r = await c.auth.getSession();
-    sync.user = r.data && r.data.session ? r.data.session.user : null;
+    var sess = r.data && r.data.session;
+    // greška pri osvežavanju (bez interneta) ne odjavljuje: ostaje sačuvana prijava
+    sync.user = sess ? sess.user : (r.error && stored ? stored : null);
     syncCleanUrl();
     c.auth.onAuthStateChange(function (ev, session) {
       var u = session ? session.user : null, was = sync.user;
@@ -417,6 +425,13 @@ function syncStatusText() {
   return '';
 }
 function syncShowStatus() { var el = document.getElementById('syncStatus'); if (el) el.textContent = syncStatusText(); }
+// korisnik iz sesije koju supabase-js čuva u localStorage (ključ storageKey iz syncClient)
+function syncStoredUser() {
+  try {
+    var s = JSON.parse(localStorage.getItem('kartice.auth') || 'null');
+    return s && s.user && s.user.id && s.refresh_token ? s.user : null;
+  } catch (e) { return null; }
+}
 // jedno otvaranje aplikacije po učitavanju stranice, za statistiku korišćenja u admin panelu
 function syncLogOpen() {
   if (sync.opened) return;
