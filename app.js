@@ -3,7 +3,7 @@
    Pri svakom objavljivanju: povećati APP_VERSION, isti broj upisati u version.json
    i u ?v= parametre u index.html. */
 
-var APP_VERSION = 13;
+var APP_VERSION = 14;
 
 /* ---------- pomoćne funkcije ---------- */
 function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
@@ -214,9 +214,7 @@ function viewHome() {
     seg('tab', [['decks', t('Špilovi')], ['quizzes', t('Kvizovi')], ['notes', t('Beleške')]], data.tab) +
     (notesTab ? viewNotesRoot() : quizTab ? quizList()
       : (n && !ui.manage ? todayPanel() : '') + '<div class="decks">' + list + (ui.manage ? '' : '<button class="deck add-deck btn" data-act="newDeck">' + t('+ Novi špil') + '</button>') + '</div>') +
-    '<div class="spacer"></div>' +
-    '<div class="field"><span class="label">' + t('Tema') + '</span>' + themeSeg() + '</div>' +
-    '</div>';
+    '</div>';   // tema je u podešavanjima
 }
 function themeSeg() {
   return seg('theme', [['auto', t('Sistem')], ['tamna', t('Tamna')], ['svetla', t('Svetla')], ['plava', t('Plava')]], data.theme);
