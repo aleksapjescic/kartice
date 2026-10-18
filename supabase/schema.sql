@@ -348,3 +348,44 @@ begin
               else 'Nalog ' || mail || ' nije pronađen. Prvo se prijavi u aplikaciji, pa ponovo pokreni.' end;
 end $$;
 revoke all on function public.make_admin(text) from public, anon, authenticated;
+
+-- ============================================================================================
+-- Admin radi u nalogu korisnika (admin.js "Otvori njegov materijal"): čita i upisuje njegove stavke
+-- i fajlove. Isto kao sync_push i čitanje items, ali za izabranog korisnika i samo za administratora.
+create or replace function public.admin_pull(uid uuid, since timestamptz default null)
+returns setof public.items
+language plpgsql stable security definer set search_path = public
+as $$
+begin
+  if not public.is_admin() then raise exception 'Samo za administratore.' using errcode = '42501'; end if;
+  return query select * from public.items i
+    where i.user_id = uid and (since is null or i.server_ts > since)
+    order by i.server_ts;
+end $$;
+revoke all on function public.admin_pull(uuid, timestamptz) from public, anon;
+grant execute on function public.admin_pull(uuid, timestamptz) to authenticated;
+
+create or replace function public.admin_push(uid uuid, rows jsonb) returns integer
+language plpgsql security definer set search_path = public
+as $$
+declare n integer;
+begin
+  if not public.is_admin() then raise exception 'Samo za administratore.' using errcode = '42501'; end if;
+  insert into public.items (user_id, kind, id, data, updated, deleted, server_ts)
+  select uid, r->>'kind', r->>'id', r->'data', (r->>'updated')::bigint,
+         coalesce((r->>'deleted')::boolean, false), clock_timestamp()
+  from jsonb_array_elements(rows) as r
+  on conflict (user_id, kind, id) do update
+    set data = excluded.data, updated = excluded.updated, deleted = excluded.deleted, server_ts = clock_timestamp()
+    where public.items.updated <= excluded.updated;
+  get diagnostics n = row_count;
+  return n;
+end $$;
+revoke all on function public.admin_push(uuid, jsonb) from public, anon;
+grant execute on function public.admin_push(uuid, jsonb) to authenticated;
+
+-- fajlovi (PDF, Word, slike) svih korisnika: administrator sme da ih čita i dodaje
+drop policy if exists "files: admin" on storage.objects;
+create policy "files: admin" on storage.objects for all to authenticated
+  using (bucket_id = 'files' and public.is_admin())
+  with check (bucket_id = 'files' and public.is_admin());

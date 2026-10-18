@@ -3,7 +3,7 @@
    Pri svakom objavljivanju: povećati APP_VERSION, isti broj upisati u version.json
    i u ?v= parametre u index.html. */
 
-var APP_VERSION = 25;
+var APP_VERSION = 26;
 
 /* ---------- pomoćne funkcije ---------- */
 function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
@@ -67,6 +67,8 @@ function save() {
 function saveNow() {
   clearTimeout(saveTimer);
   if (!data) return Promise.resolve();
+  // admin radi u nalogu korisnika (sync.js syncEnterAs): izmene idu samo na njegov nalog, ne u tvoju lokalnu bazu
+  if (typeof sync !== 'undefined' && sync.as) { if (typeof syncAfterSave === 'function') syncAfterSave(); return Promise.resolve(); }
   return statePut(data).then(function () {
     if (typeof syncAfterSave === 'function') syncAfterSave();
   }, function (e) {
@@ -960,7 +962,7 @@ function render(keepScroll) {
   var fsLabel = esc(ui.fs ? t('Izađi iz celog ekrana') : t('Ceo ekran'));
   var fsBtn = document.fullscreenEnabled
     ? '<button class="fs" data-act="fs" aria-label="' + fsLabel + '" title="' + fsLabel + '">' + (ui.fs ? ICON.fsOff : ICON.fsOn) + '</button>' : '';
-  app.innerHTML = fsBtn + html;
+  app.innerHTML = fsBtn + (typeof syncAsBanner === 'function' ? syncAsBanner() : '') + html;
   // iOS Safari ne zna za field-sizing, pa polja za tekst rastu preko JS-a
   app.querySelectorAll('textarea').forEach(autosize);
   if (keepScroll) app.querySelector('.screen').scrollTop = prevScroll;
@@ -2653,6 +2655,8 @@ var acts = {
   adminUser: adminOpenUser,
   adminUserActions: function (id) { adminUser(id); },
   toAdmin: function () { ui.screen = 'admin'; render(); },
+  workAs: function (id) { var u = (adm.users || []).find(function (x) { return x.user_id === id; }); if (u) syncEnterAs(u); },
+  exitAs: function () { syncExitAs(); },
   explain: aiExplain,
   // nalog i sinhronizacija (sync.js)
   syncSendCode: syncSendCode, syncVerify: syncVerify, syncSignOut: syncSignOut, syncGoogle: syncGoogle,

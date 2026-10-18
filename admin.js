@@ -82,7 +82,10 @@ function viewAdminUser() {
       var h = Math.round((+r.a || 0) / max * 100);
       return '<span title="' + esc(fmtDate(new Date(r.day).getTime()) + ': ' + (r.a || 0)) + '"><i style="height:' + Math.max(h, r.a ? 4 : 0) + '%"></i></span>';
     }).join('') + '</div>';
+    var me = sync.user && sync.user.id === u.user_id;
     body =
+      (me ? '' : '<div class="section"><button class="btn primary" data-act="workAs" data-arg="' + esc(u.user_id) + '">' + t('Otvori njegov materijal') + '</button>' +
+        '<p class="small-note">' + t('Vidiš i menjaš njegove špilove, kvizove i beleške, i praviš mu nove (i sa AI-jem). Sve izmene idu pravo na njegov nalog; tvoj materijal ostaje netaknut.') + '</p></div>') +
       '<div class="section"><h2>' + t('Učenje') + '</h2><div class="panel">' +
         statRow(t('Odgovora ukupno'), st.a || 0) +
         statRow(t('Novih kartica naučeno'), st.n || 0) +
@@ -103,7 +106,7 @@ function viewAdminUser() {
         statRow(t('Špilova'), c.deck || 0) + statRow(t('Kartica'), c.card || 0) +
         statRow(t('Kvizova'), c.quiz || 0) + statRow(t('Pitanja u kvizovima'), c.qq || 0) +
         statRow(t('Beleški'), c.note || 0) +
-      '</div><p class="small-note">' + t('Vidiš samo brojeve, ne i sadržaj kartica i beleški. Učenje se računa iz podataka koje je aplikacija sinhronizovala.') + '</p></div>';
+      '</div><p class="small-note">' + t('Učenje se računa iz podataka koje je aplikacija sinhronizovala.') + '</p></div>';
   }
   return '<div class="screen settings admin">' + head + body + '</div>';
 }

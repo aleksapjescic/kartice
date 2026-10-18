@@ -839,3 +839,13 @@ details.free .body { display: flex; flex-direction: column; gap: 12px; padding-b
 .mini-chart span { height: 100%; display: flex; align-items: flex-end; border-radius: 4px; background: color-mix(in srgb, var(--line) 45%, transparent); }
 .mini-chart i { display: block; width: 100%; border-radius: 4px; background: var(--good); }
 .admin .panel .row-between b { font-weight: 600; }
+
+/* admin radi u nalogu korisnika (sync.js syncAsBanner) */
+.as-banner {
+  position: fixed; z-index: 20; left: 50%; transform: translateX(-50%);
+  top: calc(env(safe-area-inset-top, 0px) + 6px); max-width: calc(100% - 120px);
+  display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 14px; border-radius: 999px;
+  background: var(--accent); color: var(--on-accent); font-size: 13px; font-weight: 600; box-shadow: 0 4px 16px rgba(0, 0, 0, .25);
+}
+.as-banner span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.as-banner button { flex: none; border: 0; border-radius: 999px; padding: 4px 12px; background: var(--on-accent); color: var(--accent); font-size: 13px; font-weight: 700; }

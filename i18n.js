@@ -751,7 +751,7 @@ var EN = {
   'Kvizova': 'Quizzes',
   'Pitanja u kvizovima': 'Quiz questions',
   'Beleški': 'Notes',
-  'Vidiš samo brojeve, ne i sadržaj kartica i beleški. Učenje se računa iz podataka koje je aplikacija sinhronizovala.': 'You see only numbers, not the content of cards and notes. Study is counted from data the app has synced.',
+  'Učenje se računa iz podataka koje je aplikacija sinhronizovala.': 'Study is counted from data the app has synced.',
   'Podaci na uređaju se sporo otvaraju. Pokušaj ponovo; ako ne pomogne, zatvori aplikaciju i otvori je opet.': 'The data on this device is slow to open. Try again; if that doesn’t help, close the app and open it again.',
   'Pokušaj ponovo': 'Try again',
   'Obriši podatke sa ovog uređaja i preuzmi ih sa naloga': 'Delete data on this device and download it from your account',
@@ -762,5 +762,15 @@ var EN = {
   'Posle toga se sve preuzima sa naloga. Prijava ostaje.': 'After that everything is downloaded from your account. You stay signed in.',
   'Ovo ne može da se vrati.': 'This can’t be undone.',
   'Obnavljam podatke sa naloga…': 'Restoring your data from your account…',
-  'Preuzimam tvoje podatke sa naloga…': 'Downloading your data from your account…'
+  'Preuzimam tvoje podatke sa naloga…': 'Downloading your data from your account…',
+
+  // admin radi u nalogu korisnika
+  'Otvori njegov materijal': 'Open their material',
+  'Vidiš i menjaš njegove špilove, kvizove i beleške, i praviš mu nove (i sa AI-jem). Sve izmene idu pravo na njegov nalog; tvoj materijal ostaje netaknut.': 'You see and edit their decks, quizzes and notes, and make new ones for them (AI included). Every change goes straight to their account; your own material stays untouched.',
+  'Učitavam materijal korisnika {e}…': 'Loading the material of {e}…',
+  'Materijal nije učitan: {m}': 'Material not loaded: {m}',
+  'Šaljem poslednje izmene…': 'Sending the last changes…',
+  'Radiš u nalogu: {e}': 'Working in the account of {e}',
+  'Izađi': 'Exit',
+  'Administrator aplikacije može da vidi i menja tvoje kartice, kvizove i beleške i da ti pripremi novi materijal.': 'The app administrator can see and edit your cards, quizzes and notes and prepare new material for you.'
 };

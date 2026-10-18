@@ -160,7 +160,43 @@ async function syncLoadMeta() {
   if (!m || m.uid !== sync.user.id) m = { uid: sync.user.id, shadow: {}, files: {}, lastPull: null, gc: 0, last: 0 };
   sync.meta = m;
 }
-function syncSaveMeta() { return idb('state', 'readwrite', function (st) { return st.put(sync.meta, SYNC_META); }).catch(function () {}); }
+function syncSaveMeta() {
+  if (sync.as) return Promise.resolve();   // stanje tuđeg naloga se ne čuva u tvojoj bazi
+  return idb('state', 'readwrite', function (st) { return st.put(sync.meta, SYNC_META); }).catch(function () {});
+}
+
+/* ---------- admin radi u nalogu korisnika ----------
+   Tvoji podaci se sačuvaju i ostaju u lokalnoj bazi netaknuti; data u memoriji postaje materijal korisnika,
+   preuzet sa njegovog naloga, a svaka izmena se šalje na njegov nalog (admin_pull / admin_push u schema.sql).
+   Ništa od toga se ne upisuje u tvoju lokalnu bazu (saveNow, syncSaveMeta). Izlazak: pošalju se poslednje
+   izmene i stranica se ponovo učita sa tvojim podacima. */
+async function syncEnterAs(u) {
+  if (!syncIsAdmin() || !u || !u.user_id) return;
+  await Promise.resolve(saveNow());
+  try { await syncNow(); } catch (e) {}
+  var keep = data.settings;
+  sync.as = { uid: u.user_id, email: u.email || u.name || '' };
+  sync.meta = { uid: u.user_id, shadow: {}, files: {}, lastPull: null, gc: Date.now(), last: 0 };
+  data = normalize({ decks: [], schema: SCHEMA, settings: Object.assign({}, keep) });
+  ui.screen = 'home'; ui.manage = false; data.tab = 'decks';
+  render();
+  toast(t('Učitavam materijal korisnika {e}…', { e: sync.as.email }));
+  await syncNow();
+  render(true);
+  if (sync.error) toast(t('Materijal nije učitan: {m}', { m: sync.error }));
+}
+async function syncExitAs() {
+  if (!sync.as) return;
+  toast(t('Šaljem poslednje izmene…'));
+  try { await syncNow(); } catch (e) {}
+  sync.as = null;
+  location.reload();
+}
+function syncAsBanner() {
+  if (!sync.as) return '';
+  return '<div class="as-banner" role="status"><span>' + t('Radiš u nalogu: {e}', { e: esc(sync.as.email) }) + '</span>' +
+    '<button type="button" data-act="exitAs">' + t('Izađi') + '</button></div>';
+}
 
 /* ---------- sinhronizacija ---------- */
 function syncAfterSave() {
@@ -181,12 +217,19 @@ function syncNow() {
   });
   return sync.running;
 }
+// čiji se nalog sinhronizuje: svoj, ili korisnika u čijem nalogu admin radi (syncEnterAs)
+function syncUid() { return sync.as ? sync.as.uid : sync.user.id; }
 async function pullAll(c, since) {
   var rows = [], from = 0, page = 1000;
+  // malo preklapanja: red upisan u transakciji koja se završila kasnije ne sme da se preskoči
+  var after = since ? new Date(new Date(since).getTime() - 5000).toISOString() : null;
   for (;;) {
-    var q = c.from('items').select('kind,id,data,updated,deleted,server_ts').order('server_ts', { ascending: true }).range(from, from + page - 1);
-    // malo preklapanja: red upisan u transakciji koja se završila kasnije ne sme da se preskoči
-    if (since) q = q.gt('server_ts', new Date(new Date(since).getTime() - 5000).toISOString());
+    var q;
+    if (sync.as) q = c.rpc('admin_pull', { uid: sync.as.uid, since: after }).select('kind,id,data,updated,deleted,server_ts').range(from, from + page - 1);
+    else {
+      q = c.from('items').select('kind,id,data,updated,deleted,server_ts').order('server_ts', { ascending: true }).range(from, from + page - 1);
+      if (after) q = q.gt('server_ts', after);
+    }
     var r = await q;
     if (r.error) throw r.error;
     rows = rows.concat(r.data);
@@ -224,7 +267,7 @@ async function syncRun() {
       var mode = pristine() ? 'replace' : await askMerge();
       if (!mode) { sync.status = ''; return; }
       if (mode === 'replace') {
-        await backupPut('pre-sync', { t: Date.now(), data: JSON.parse(JSON.stringify(data)) });
+        if (!sync.as) await backupPut('pre-sync', { t: Date.now(), data: JSON.parse(JSON.stringify(data)) });
         data.decks = []; data.quizzes = []; data.notes = []; data.folders = []; data.rev = {};
         Object.keys(data.days).forEach(function (dev) { if (dev !== DEVICE_ID) delete data.days[dev]; });
       }
@@ -241,7 +284,8 @@ async function syncRun() {
   var rows = syncDiff();
   for (var i = 0; i < rows.length; i += 500) {
     var part = rows.slice(i, i + 500);
-    var r = await c.rpc('sync_push', { rows: part.map(function (x) { return { kind: x.kind, id: x.id, data: x.data, updated: x.updated, deleted: x.deleted }; }) });
+    var payload = part.map(function (x) { return { kind: x.kind, id: x.id, data: x.data, updated: x.updated, deleted: x.deleted }; });
+    var r = sync.as ? await c.rpc('admin_push', { uid: sync.as.uid, rows: payload }) : await c.rpc('sync_push', { rows: payload });
     if (r.error) throw r.error;
     part.forEach(function (x) { if (x.deleted) delete sync.meta.shadow[x.key]; else sync.meta.shadow[x.key] = x.h; });
   }
@@ -281,7 +325,7 @@ function syncRerender() {
 
 /* ---------- fajlovi ---------- */
 async function syncFiles(c) {
-  var uid = sync.user.id, ids = allFileIds(), sent = 0;
+  var uid = syncUid(), ids = allFileIds(), sent = 0;
   for (var i = 0; i < ids.length && sent < 5; i++) {
     var id = ids[i];
     if (sync.meta.files[id]) continue;
@@ -291,8 +335,8 @@ async function syncFiles(c) {
     if (up.error && !/exists/i.test(up.error.message || '')) throw up.error;
     sync.meta.files[id] = 1; sent++;
   }
-  // fajlovi obrisanih beleški i kartica se brišu sa naloga jednom dnevno
-  if (Date.now() - (sync.meta.gc || 0) > 864e5) {
+  // fajlovi obrisanih beleški i kartica se brišu sa naloga jednom dnevno (u tuđem nalogu nikad)
+  if (!sync.as && Date.now() - (sync.meta.gc || 0) > 864e5) {
     var keep = {}; ids.forEach(function (x) { keep[x] = 1; });
     var ls = await c.storage.from('files').list(uid, { limit: 1000 });
     if (!ls.error && ls.data) {
@@ -307,7 +351,7 @@ async function syncFiles(c) {
 async function syncFetchFile(id) {
   if (!sync.user || !navigator.onLine) return undefined;
   try {
-    var c = await syncClient(), r = await c.storage.from('files').download(sync.user.id + '/' + id);
+    var c = await syncClient(), r = await c.storage.from('files').download(syncUid() + '/' + id);
     if (r.error || !r.data) return undefined;
     var rec = { name: id, type: r.data.type, buf: await r.data.arrayBuffer() };
     await filePut(id, rec);
@@ -506,7 +550,8 @@ function syncSettingsSection() {
       '<p class="small-note num" id="syncStatus">' + esc(syncStatusText()) + '</p>' +
       '<div class="row-btns even"><button class="btn small" data-act="syncNow">' + t('Sinhronizuj sada') + '</button>' +
       '<button class="btn small" data-act="syncSignOut">' + t('Odjavi se') + '</button></div>' +
-      (syncIsAdmin() ? '<button class="btn small" data-act="openAdmin">' + t('Admin panel') + '</button>' : '');
+      (syncIsAdmin() ? '<button class="btn small" data-act="openAdmin">' + t('Admin panel') + '</button>' : '') +
+      '<p class="small-note">' + t('Administrator aplikacije može da vidi i menja tvoje kartice, kvizove i beleške i da ti pripremi novi materijal.') + ' <a href="privacy.html" target="_blank" rel="noopener">' + t('Politika privatnosti') + '</a></p>';
   } else {
     body = syncLoginBody(true);
   }
