@@ -3,7 +3,7 @@
    Pri svakom objavljivanju: povećati APP_VERSION, isti broj upisati u version.json
    i u ?v= parametre u index.html. */
 
-var APP_VERSION = 24;
+var APP_VERSION = 25;
 
 /* ---------- pomoćne funkcije ---------- */
 function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
@@ -1248,10 +1248,15 @@ function beginQuizSrs() {
   beginQuiz(q.map(function (k) { return k.split(':')[2]; }), true);
 }
 // idx je indeks izabranog odgovora; -1 znači "Ne znam"
+// Na iPhone-u brzi dupli dodir stiže kao dva klika: "Sledeće pitanje" pa "Ne znam" na istom mestu novog
+// pitanja, pa je pitanje izgledalo kao da je aplikacija sama odgovorila. Zato se odgovor prima tek
+// QUIZ_TAP_GUARD ms pošto se pitanje pojavi, a prelazak na sledeće tek toliko posle odgovora.
+var QUIZ_TAP_GUARD = 450;
 function pick(idx) {
   var s = ui.qz; if (!s || s.picked !== null) return;
+  if (Date.now() - (s.shownAt || 0) < QUIZ_TAP_GUARD) return;
   var z = quiz(), q = qById(z, s.order[s.i]), key = 'q:' + z.id + ':' + q.id, now = Date.now(), right = idx === q.correct;
-  s.picked = idx;
+  s.picked = idx; s.pickedAt = now;
   if (right) { s.right++; z.known[q.id] = true; }
   else { s.wrong.push(q.id); delete z.known[q.id]; }
   // u ponavljanju: tačno = Dobro, netačno ili "Ne znam" = Ponovo
@@ -1262,6 +1267,7 @@ function pick(idx) {
 }
 function nextQuestion() {
   var s = ui.qz; if (!s || s.picked === null) return;
+  if (Date.now() - (s.pickedAt || 0) < QUIZ_TAP_GUARD) return;
   if (s.i + 1 >= s.order.length) { ui.screen = 'quizDone'; render(); return; }
   s.i++; s.picked = null; ui.tick++; s.shownAt = Date.now();
   render();
