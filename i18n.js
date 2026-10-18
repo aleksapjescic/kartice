@@ -760,5 +760,6 @@ var EN = {
   'Nisi prijavljen, pa će se podaci sa ovog uređaja trajno obrisati.': 'You are not signed in, so the data on this device will be deleted permanently.',
   'Obrisati podatke sa ovog uređaja?': 'Delete data on this device?',
   'Posle toga se sve preuzima sa naloga. Prijava ostaje.': 'After that everything is downloaded from your account. You stay signed in.',
-  'Ovo ne može da se vrati.': 'This can’t be undone.'
+  'Ovo ne može da se vrati.': 'This can’t be undone.',
+  'Obnavljam podatke sa naloga…': 'Restoring your data from your account…'
 };

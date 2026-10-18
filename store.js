@@ -117,7 +117,7 @@ function backupDel(id) { return idb('backups', 'readwrite', function (st) { retu
    Vraća { data, from: 'idb' | 'local' | 'new' }. */
 async function loadData() {
   var d = null;
-  try { d = await stateGetPatient(6000); }
+  try { d = await stateGetPatient(4000); }
   catch (e) { if (e && e.message === 'idb-timeout') return { data: null, from: 'stuck' }; }
   if (d && Array.isArray(d.decks)) return { data: d, from: 'idb' };
   try {

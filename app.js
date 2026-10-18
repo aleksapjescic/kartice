@@ -3,7 +3,7 @@
    Pri svakom objavljivanju: povećati APP_VERSION, isti broj upisati u version.json
    i u ?v= parametre u index.html. */
 
-var APP_VERSION = 21;
+var APP_VERSION = 22;
 
 /* ---------- pomoćne funkcije ---------- */
 function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
@@ -3130,6 +3130,18 @@ async function boot() {
   // baza na uređaju ne odgovara (iPhone): ne učitava se prazno preko tvojih podataka, nego se nudi ponovni pokušaj
   if (r.from === 'stuck') {
     var onAccount = typeof syncStoredUser === 'function' && !!syncStoredUser();
+    // Prijavljen korisnik: sve je na nalogu, pa se baza na uređaju sama zameni novom i podaci preuzmu ponovo.
+    // Najviše jednom u 3 minuta, da ne bi bilo beskonačnog osvežavanja; posle toga se prikazuju dugmad.
+    var lastAuto = 0;
+    try { lastAuto = +localStorage.getItem('kartice.autoReset') || 0; } catch (e) {}
+    if (onAccount && Date.now() - lastAuto > 180000) {
+      try { localStorage.setItem('kartice.autoReset', String(Date.now())); } catch (e) {}
+      app.innerHTML = '<div class="screen login-gate"><div class="head login-head"><span class="eyebrow">' + t('Učenje kartica') + '</span><h1>' + t('Kartice') + '</h1></div>' +
+        '<p class="sub">' + t('Obnavljam podatke sa naloga…') + '</p></div>';
+      dbReset();
+      setTimeout(function () { location.reload(); }, 300);
+      return;
+    }
     app.innerHTML = '<div class="screen login-gate"><div class="head login-head"><span class="eyebrow">' + t('Učenje kartica') + '</span><h1>' + t('Kartice') + '</h1></div>' +
       '<p class="sub">' + t('Podaci na uređaju se sporo otvaraju. Pokušaj ponovo; ako ne pomogne, zatvori aplikaciju i otvori je opet.') + '</p>' +
       '<div class="stack"><button class="btn primary" id="bootRetry">' + t('Pokušaj ponovo') + '</button>' +
