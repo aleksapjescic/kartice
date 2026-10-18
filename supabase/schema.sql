@@ -204,11 +204,40 @@ $$;
 revoke all on function public.ai_finish(uuid, bigint, boolean) from public, anon, authenticated;
 grant execute on function public.ai_finish(uuid, bigint, boolean) to service_role;
 
--- Admin: spisak korisnika sa potrošnjom danas i ovog meseca
-create or replace function public.admin_users()
+-- Korišćenje aplikacije: koliko puta je otvorena po danu. Upisuje log_open pri pokretanju, čitaju samo admin funkcije.
+create table if not exists public.app_activity (
+  user_id uuid    not null references auth.users (id) on delete cascade,
+  day     date    not null,
+  opens   integer not null default 0,
+  primary key (user_id, day)
+);
+alter table public.app_activity enable row level security;
+
+create or replace function public.log_open() returns void
+language sql security definer set search_path = public
+as $$
+  insert into public.app_activity (user_id, day, opens) values (auth.uid(), public.ai_today(), 1)
+  on conflict (user_id, day) do update set opens = app_activity.opens + 1;
+$$;
+revoke all on function public.log_open() from public, anon;
+grant execute on function public.log_open() to authenticated;
+
+-- Dnevni zbirovi učenja iz sinhronizacije: stavke 'day' su <uređaj>/<YYYY-MM-DD> = { a, n, rv, ok, ms } (stats.js)
+create or replace view public.study_days with (security_invoker = true) as
+select i.user_id, split_part(i.id, '/', 2)::date as day,
+       coalesce((i.data->>'a')::bigint, 0) as a, coalesce((i.data->>'n')::bigint, 0) as n,
+       coalesce((i.data->>'rv')::bigint, 0) as rv, coalesce((i.data->>'ok')::bigint, 0) as ok,
+       coalesce((i.data->>'ms')::bigint, 0) as ms
+from public.items i
+where i.kind = 'day' and not i.deleted and i.data is not null and split_part(i.id, '/', 2) ~ '^\d{4}-\d{2}-\d{2}$';
+
+-- Admin: spisak korisnika sa učenjem, korišćenjem i AI potrošnjom
+drop function if exists public.admin_users();
+create function public.admin_users()
 returns table (user_id uuid, email text, name text, role text, blocked boolean, daily_limit integer,
                created timestamptz, last_seen timestamptz, today_calls integer, today_tokens bigint,
-               month_calls integer, month_tokens bigint)
+               month_calls integer, month_tokens bigint,
+               week_answers bigint, week_ms bigint, total_answers bigint, open_days integer, last_open date)
 language plpgsql security definer set search_path = public
 as $$
 #variable_conflict use_column
@@ -217,15 +246,54 @@ begin
   if not public.is_admin() then raise exception 'Samo za administratore.' using errcode = '42501'; end if;
   return query
   select p.user_id, p.email, p.name, p.role, p.blocked, p.daily_limit, p.created, p.last_seen,
-         coalesce(t.calls, 0), coalesce(t.tokens, 0)::bigint, coalesce(m.calls, 0)::integer, coalesce(m.tokens, 0)::bigint
+         coalesce(t.calls, 0), coalesce(t.tokens, 0)::bigint, coalesce(m.calls, 0)::integer, coalesce(m.tokens, 0)::bigint,
+         coalesce(s.wa, 0)::bigint, coalesce(s.wms, 0)::bigint, coalesce(s.ta, 0)::bigint,
+         coalesce(o.od, 0)::integer, o.lo
   from public.profiles p
   left join public.ai_usage t on t.user_id = p.user_id and t.day = d
   left join (select a.user_id, sum(a.calls) as calls, sum(a.tokens) as tokens from public.ai_usage a
              where a.day >= date_trunc('month', d)::date group by a.user_id) m on m.user_id = p.user_id
+  left join (select sd.user_id, sum(sd.a) filter (where sd.day > d - 7) as wa, sum(sd.ms) filter (where sd.day > d - 7) as wms,
+                    sum(sd.a) as ta
+             from public.study_days sd group by sd.user_id) s on s.user_id = p.user_id
+  left join (select aa.user_id, count(*) filter (where aa.day > d - 30) as od, max(aa.day) as lo
+             from public.app_activity aa group by aa.user_id) o on o.user_id = p.user_id
   order by p.last_seen desc nulls last, p.created desc;
 end $$;
 revoke all on function public.admin_users() from public, anon;
 grant execute on function public.admin_users() to authenticated;
+
+-- Admin: detalji jednog korisnika (samo brojevi, bez sadržaja kartica i beleški)
+create or replace function public.admin_user_stats(uid uuid) returns jsonb
+language plpgsql security definer set search_path = public
+as $$
+declare d date := public.ai_today(); r jsonb;
+begin
+  if not public.is_admin() then raise exception 'Samo za administratore.' using errcode = '42501'; end if;
+  with days as (
+    select sd.day, sum(sd.a) as a, sum(sd.n) as n, sum(sd.rv) as rv, sum(sd.ok) as ok, sum(sd.ms) as ms
+    from public.study_days sd where sd.user_id = uid group by sd.day
+  )
+  select jsonb_build_object(
+    'study', (select jsonb_build_object('a', coalesce(sum(a), 0), 'n', coalesce(sum(n), 0), 'rv', coalesce(sum(rv), 0),
+               'ok', coalesce(sum(ok), 0), 'ms', coalesce(sum(ms), 0), 'days', count(*) filter (where a > 0),
+               'last', max(day) filter (where a > 0)) from days),
+    'recent', (select coalesce(jsonb_agg(jsonb_build_object('day', g::date, 'a', coalesce(x.a, 0), 'ms', coalesce(x.ms, 0)) order by g), '[]'::jsonb)
+               from generate_series(d - 13, d, interval '1 day') g left join days x on x.day = g::date),
+    'content', (select coalesce(jsonb_object_agg(s.kind, s.c), '{}'::jsonb)
+                from (select i.kind, count(*) as c from public.items i
+                      where i.user_id = uid and not i.deleted and i.kind in ('deck', 'card', 'quiz', 'qq', 'note', 'folder', 'known', 'qknown')
+                      group by i.kind) s),
+    'learned', (select count(*) from public.items i where i.user_id = uid and i.kind = 'rev' and not i.deleted and (i.data->>'st')::int = 2),
+    'opens', (select jsonb_build_object('total', coalesce(sum(aa.opens), 0), 'days30', count(*) filter (where aa.day > d - 30), 'last', max(aa.day))
+              from public.app_activity aa where aa.user_id = uid),
+    'ai', (select jsonb_build_object('calls', coalesce(sum(u.calls), 0), 'tokens', coalesce(sum(u.tokens), 0))
+           from public.ai_usage u where u.user_id = uid)
+  ) into r;
+  return r;
+end $$;
+revoke all on function public.admin_user_stats(uuid) from public, anon;
+grant execute on function public.admin_user_stats(uuid) to authenticated;
 
 -- Admin: izmena korisnika. patch: { role?, blocked?, daily_limit? (null = podrazumevani) }
 create or replace function public.admin_set_user(uid uuid, patch jsonb) returns void

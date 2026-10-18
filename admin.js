@@ -15,7 +15,7 @@ async function adminLoad() {
     adm.users = r1.data || []; adm.cfg = r2.data;
   } catch (e) { adm.err = (e && e.message) || String(e); }
   adm.loading = false;
-  if (ui.screen === 'admin') render(true);
+  if (/^admin(User)?$/.test(ui.screen)) render(true);
 }
 function adminOpen() { ui.screen = 'admin'; adm.users = null; adm.err = ''; render(); adminLoad(); }
 
@@ -38,11 +38,74 @@ function adminUserRow(u) {
   var badges = (u.role === 'admin' ? '<span class="badge">' + t('Admin') + '</span>' : '') +
     (u.blocked ? '<span class="badge pdf">' + t('Blokiran') + '</span>' : '') +
     (u.daily_limit != null && u.role !== 'admin' ? '<span class="badge docx">' + t('Svoj limit') + '</span>' : '');
+  var study = t('7 dana: {a} odgovora, {m} · {d} dana u aplikaciji (30 dana)', { a: u.week_answers || 0, m: fmtMinutes(u.week_ms), d: u.open_days || 0 });
   return '<button class="note-item" data-act="adminUser" data-arg="' + esc(u.user_id) + '">' +
     '<span class="note-title">' + esc(u.email || u.name || u.user_id) + '</span>' +
-    '<span class="note-preview num">' + esc(today + ' · ' + t('mesec {c} poziva, {k} tokena', { c: u.month_calls, k: fmtTokens(u.month_tokens) })) + '</span>' +
-    '<span class="note-meta">' + badges + '<span>' + (u.last_seen ? t('aktivan {d}', { d: fmtDate(new Date(u.last_seen).getTime()) }) : t('još nije bio aktivan')) + '</span></span>' +
+    '<span class="note-preview num">' + esc(study) + '</span>' +
+    '<span class="note-meta">' + badges + '<span>' + (u.last_seen ? t('aktivan {d}', { d: fmtDate(new Date(u.last_seen).getTime()) }) : t('još nije bio aktivan')) + '</span>' +
+      '<span>· AI ' + esc(today) + '</span></span>' +
     '</button>';
+}
+function fmtMinutes(ms) {
+  var m = Math.round((+ms || 0) / 60000);
+  return m >= 60 ? Math.floor(m / 60) + ' h ' + (m % 60) + ' min' : m + ' min';
+}
+
+/* ---------- detalji jednog korisnika: učenje i korišćenje (samo brojevi, bez sadržaja) ---------- */
+function adminOpenUser(id) {
+  adm.uid = id; adm.stats = null; adm.statsErr = '';
+  ui.screen = 'adminUser'; render();
+  syncClient().then(function (c) { return c.rpc('admin_user_stats', { uid: id }); }).then(function (r) {
+    if (r.error) throw r.error;
+    if (adm.uid === id) adm.stats = r.data;
+  }).catch(function (e) { adm.statsErr = (e && e.message) || String(e); })
+    .then(function () { if (ui.screen === 'adminUser') render(true); });
+}
+function statRow(label, value) {
+  return '<div class="row-between"><span class="small-note">' + label + '</span><b class="num">' + value + '</b></div>';
+}
+function viewAdminUser() {
+  var u = (adm.users || []).find(function (x) { return x.user_id === adm.uid; });
+  var head = '<div class="topbar">' + backBtn('toAdmin', t('Admin panel')) +
+    (u ? '<button class="link" data-act="adminUserActions" data-arg="' + esc(u.user_id) + '">' + t('Limit i prava') + '</button>' : '') + '</div>' +
+    '<div class="head" style="padding-top:0"><span class="eyebrow">' + t('Korisnik') + '</span><h1 class="read-title">' + esc(u ? (u.email || u.name) : '') + '</h1>' +
+    (u ? '<span class="sub num">' + t('Registrovan: {d}', { d: fmtDate(new Date(u.created).getTime()) }) + '</span>' : '') + '</div>';
+  var s = adm.stats, body;
+  if (!syncIsAdmin() || !u) body = '<p class="empty-note">' + t('Ovaj ekran je samo za administratore.') + '</p>';
+  else if (adm.statsErr) body = '<p class="empty-note">' + t('Podaci nisu učitani: {m}', { m: esc(adm.statsErr) }) + '</p>';
+  else if (!s) body = '<p class="empty-note">' + t('Učitavam…') + '</p>';
+  else {
+    var st = s.study || {}, c = s.content || {}, o = s.opens || {}, ai = s.ai || {};
+    var acc = st.rv ? Math.round(st.ok / st.rv * 100) + '%' : '–';
+    var recent = s.recent || [], max = Math.max.apply(null, recent.map(function (r) { return +r.a || 0; }).concat([1]));
+    var chart = '<div class="mini-chart" role="img" aria-label="' + esc(t('Odgovori po danima, poslednjih 14 dana')) + '">' + recent.map(function (r) {
+      var h = Math.round((+r.a || 0) / max * 100);
+      return '<span title="' + esc(fmtDate(new Date(r.day).getTime()) + ': ' + (r.a || 0)) + '"><i style="height:' + Math.max(h, r.a ? 4 : 0) + '%"></i></span>';
+    }).join('') + '</div>';
+    body =
+      '<div class="section"><h2>' + t('Učenje') + '</h2><div class="panel">' +
+        statRow(t('Odgovora ukupno'), st.a || 0) +
+        statRow(t('Novih kartica naučeno'), st.n || 0) +
+        statRow(t('Tačnost u ponavljanju'), acc) +
+        statRow(t('Vreme učenja'), fmtMinutes(st.ms)) +
+        statRow(t('Dana sa učenjem'), st.days || 0) +
+        statRow(t('Poslednje učenje'), st.last ? fmtDate(new Date(st.last).getTime()) : '–') +
+        statRow(t('Kartica u ponavljanju'), s.learned || 0) +
+      '</div><span class="label">' + t('Odgovori po danima, poslednjih 14 dana') + '</span>' + chart + '</div>' +
+      '<div class="section"><h2>' + t('Korišćenje aplikacije') + '</h2><div class="panel">' +
+        statRow(t('Otvaranja ukupno'), o.total || 0) +
+        statRow(t('Dana u aplikaciji (30 dana)'), o.days30 || 0) +
+        statRow(t('Poslednje otvaranje'), o.last ? fmtDate(new Date(o.last).getTime()) : '–') +
+        statRow(t('AI poziva ukupno'), ai.calls || 0) +
+        statRow(t('AI tokena ukupno'), fmtTokens(ai.tokens)) +
+      '</div></div>' +
+      '<div class="section"><h2>' + t('Sadržaj') + '</h2><div class="panel">' +
+        statRow(t('Špilova'), c.deck || 0) + statRow(t('Kartica'), c.card || 0) +
+        statRow(t('Kvizova'), c.quiz || 0) + statRow(t('Pitanja u kvizovima'), c.qq || 0) +
+        statRow(t('Beleški'), c.note || 0) +
+      '</div><p class="small-note">' + t('Vidiš samo brojeve, ne i sadržaj kartica i beleški. Učenje se računa iz podataka koje je aplikacija sinhronizovala.') + '</p></div>';
+  }
+  return '<div class="screen settings admin">' + head + body + '</div>';
 }
 function fmtTokens(n) {
   n = +n || 0;

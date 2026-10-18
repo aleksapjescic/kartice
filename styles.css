@@ -828,3 +828,14 @@ details.free .body { display: flex; flex-direction: column; gap: 12px; padding-b
   .pdf-stack { padding: 52px 0 64px; }
   .note-images { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 }
+
+/* ekran za prijavu (obavezna prijava, sync.js) */
+.login-gate { max-width: 440px; justify-content: center; }
+.login-gate .login-head h1 { font-size: 44px; }
+.login-gate .small-note a { color: var(--muted); }
+
+/* admin: odgovori po danima za jednog korisnika */
+.mini-chart { display: grid; grid-template-columns: repeat(14, minmax(0, 1fr)); gap: 4px; align-items: end; height: 72px; }
+.mini-chart span { height: 100%; display: flex; align-items: flex-end; border-radius: 4px; background: color-mix(in srgb, var(--line) 45%, transparent); }
+.mini-chart i { display: block; width: 100%; border-radius: 4px; background: var(--good); }
+.admin .panel .row-between b { font-weight: 600; }

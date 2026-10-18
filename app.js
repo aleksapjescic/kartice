@@ -3,7 +3,7 @@
    Pri svakom objavljivanju: povećati APP_VERSION, isti broj upisati u version.json
    i u ?v= parametre u index.html. */
 
-var APP_VERSION = 16;
+var APP_VERSION = 17;
 
 /* ---------- pomoćne funkcije ---------- */
 function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
@@ -914,7 +914,7 @@ function viewSettings() {
 var app = document.getElementById('app');
 var VIEWS = { home: viewHome, deck: viewDeck, cards: viewStudy, done: viewDone, edit: viewEdit, folder: viewFolder, stats: viewStats, aiReview: viewAiReview,
   noteRead: viewNoteRead, noteEdit: viewNoteEdit, docx: viewDocx, pdf: viewPdf, image: viewImage, settings: viewSettings,
-  quiz: viewQuiz, quizPlay: viewQuizPlay, quizDone: viewQuizDone, quizEdit: viewQuizEdit, admin: viewAdmin };
+  quiz: viewQuiz, quizPlay: viewQuizPlay, quizDone: viewQuizDone, quizEdit: viewQuizEdit, admin: viewAdmin, adminUser: viewAdminUser };
 
 function applyTheme() {
   var b = document.body, s = data.settings;
@@ -942,6 +942,14 @@ function render(keepScroll) {
   if (/^quiz(Play|Done)$/.test(ui.screen) && !ui.qz) ui.screen = 'quiz';
   if (ui.screen === 'aiReview' && !ui.ai) ui.screen = 'home';
   applyTheme();
+  // bez naloga se vidi samo ekran za prijavu (sync.js); ui.screen ostaje, pa se posle prijave nastavlja gde je bilo
+  var gate = typeof syncGate === 'function' ? syncGate() : null;
+  if (gate) {
+    document.body.classList.remove('on-viewer');
+    app.innerHTML = viewLoginGate(gate);
+    lastScreen = 'login';
+    return;
+  }
   document.body.classList.toggle('has-fs', !!document.fullscreenEnabled);
   document.body.classList.toggle('on-viewer', ui.screen === 'pdf' || ui.screen === 'image');
   var cur = app.querySelector('.screen');
@@ -2635,7 +2643,9 @@ var acts = {
   adminToggleShared: function () { if (adm.cfg) adminConfig({ shared_key_on: !adm.cfg.shared_key_on }, adm.cfg.shared_key_on ? t('Besplatan AI je isključen') : t('Besplatan AI je uključen')); },
   adminDefLimit: adminDefLimit,
   adminModel: adminModel,
-  adminUser: adminUser,
+  adminUser: adminOpenUser,
+  adminUserActions: function (id) { adminUser(id); },
+  toAdmin: function () { ui.screen = 'admin'; render(); },
   explain: aiExplain,
   // nalog i sinhronizacija (sync.js)
   syncSendCode: syncSendCode, syncVerify: syncVerify, syncSignOut: syncSignOut, syncGoogle: syncGoogle,

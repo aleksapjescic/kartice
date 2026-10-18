@@ -11,7 +11,7 @@ Adresa: https://aleksapjescic.github.io/kartice/
 - **statistika**: dani zaredom, dnevni cilj, kalendar učenja, odgovori po danima, prognoza ponavljanja, najteže kartice, značke
 - **formatiranje** u karticama, kvizovima i beleškama (podebljano, kurziv, označeno, liste, formule), kartice sa prazninama, čitanje naglas
 - **AI asistent**: kartice i pitanja za kviz iz beleški, PDF-a, Word-a i slika, „Objasni mi” na kartici; radi sa tvojim ključem (Claude ili Gemini) ili, za prijavljene, sa ključem aplikacije uz dnevni limit
-- **nalog i sinhronizacija** (Supabase): prijava Google-om ili kodom na e-mail, isti nalog na telefonu i računaru; dnevni podsetnik; **admin panel** za korisnike, limite i ključ aplikacije (vidi `supabase/README.md`)
+- **nalog i sinhronizacija** (Supabase): aplikacija se koristi uz prijavu (Google ili kod na e-mail), isti nalog na telefonu i računaru; dnevni podsetnik; **admin panel**: korisnici, koliko ko uči i koristi aplikaciju, limiti i ključ aplikacije (vidi `supabase/README.md`)
 - slike uz pitanje i odgovor, učenje obrnuto (odgovor → pitanje), „Poništi” poslednji odgovor, pretraga kartica
 - kvizovi sa ponuđenim odgovorima: unos pitanja ili uvoz iz teksta, praćenje naučenog, ponavljanje netačnih i spisak grešaka
 - beleške: tekstualne, PDF (listanje kao u knjizi ili skrolovanje, zumiranje u oba režima) i Word .docx (u bojama izabrane teme)
