@@ -563,7 +563,7 @@ details.free .body { display: flex; flex-direction: column; gap: 12px; padding-b
 .row-btns.even { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
 /* učenje: ocene, kucanje odgovora, zvučnik */
-.actions.rate { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.actions.rate { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .actions.rate .btn { height: 60px; padding: 0 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 15px; }
 .actions.rate small { font-size: 12px; font-weight: 500; color: var(--muted); font-variant-numeric: tabular-nums; }
 .actions.rate .rate-again span { color: var(--bad); }

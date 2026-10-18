@@ -3,7 +3,7 @@
    Pri svakom objavljivanju: povećati APP_VERSION, isti broj upisati u version.json
    i u ?v= parametre u index.html. */
 
-var APP_VERSION = 23;
+var APP_VERSION = 24;
 
 /* ---------- pomoćne funkcije ---------- */
 function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
@@ -541,14 +541,15 @@ function viewStudy() {
       '<div class="divider"></div>') +
       typed +
       '<div class="answer-scroll"><button class="answer" data-act="flip" aria-label="' + esc(t('Vrati na pitanje')) + '">' + ans + '</button></div>' +
-      '<span class="hint"><span class="touch-only">' + (srsMode ? t('Prevuci desno za Dobro, levo za Ponovo') : t('Prevuci desno ako znaš, levo ako ne znaš')) + '</span><span class="mouse-only">' + t('Klikni karticu za pitanje') + '</span></span></div>' +
+      '<span class="hint"><span class="touch-only">' + t('Prevuci desno ako znaš, levo ako ne znaš') + '</span><span class="mouse-only">' + t('Klikni karticu za pitanje') + '</span></span></div>' +
       speakBtn('back');
     if (srsMode) {
+      // radi jednostavnosti samo dve ocene: Ne znam = Ponovo, Znam = Dobro (raspored ponavljanja ostaje isti)
       var pv = srsPreview(ui.order[ui.i], Date.now());
-      actions = '<div class="actions rate">' + [[1, 'Ponovo', 'again'], [2, 'Teško', 'hard'], [3, 'Dobro', 'good'], [4, 'Lako', 'easy']].map(function (r) {
+      actions = '<div class="actions rate">' + [[RATING.again, 'Ne znam', 'again'], [RATING.good, 'Znam', 'good']].map(function (r) {
         return '<button class="btn rate-' + r[2] + '" data-act="rate" data-arg="' + r[0] + '"><span>' + t(r[1]) + '</span><small>' + esc(pv[r[0]]) + '</small></button>';
       }).join('') + '</div>';
-      keys = '<div class="keys"><span><kbd>1</kbd>–<kbd>4</kbd> ' + t('ocena') + '</span><span><kbd>←</kbd> ' + t('ponovo') + '</span><span><kbd>→</kbd> ' + t('dobro') + '</span><span><kbd>Z</kbd> ' + t('poništi') + '</span></div>';
+      keys = '<div class="keys"><span><kbd>1</kbd> ' + t('ili') + ' <kbd>←</kbd> ' + t('ne znam') + '</span><span><kbd>2</kbd> ' + t('ili') + ' <kbd>→</kbd> ' + t('znam') + '</span><span><kbd>Z</kbd> ' + t('poništi') + '</span></div>';
     } else {
       actions = '<div class="actions back">' +
         '<button class="btn" data-act="no">' + t('Ne znam') + '</button>' +
@@ -3012,7 +3013,7 @@ document.addEventListener('keydown', function (e) {
     var srsMode = ui.mode === 'srs';
     if (e.key === 'ArrowLeft') { e.preventDefault(); if (ui.flipped) { if (srsMode) rate(RATING.again); else mark(false); } else if (!srsMode) go(ui.i - 1); }
     else if (e.key === 'ArrowRight') { e.preventDefault(); if (ui.flipped) { if (srsMode) rate(RATING.good); else mark(true); } else flip(); }
-    else if (srsMode && ui.flipped && /^[1-4]$/.test(e.key)) rate(+e.key);
+    else if (srsMode && ui.flipped && (e.key === '1' || e.key === '2')) rate(e.key === '1' ? RATING.again : RATING.good);
     else if (!srsMode && e.key === '1' && ui.flipped) mark(false);
     else if (!srsMode && e.key === '2' && ui.flipped) mark(true);
     else if (e.key === 'z' || e.key === 'Z' || e.key === 'Backspace') { e.preventDefault(); undoMark(); }
