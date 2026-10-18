@@ -109,7 +109,7 @@ create table if not exists public.app_config (
   id                  integer primary key default 1 check (id = 1),
   shared_key_on       boolean not null default true,
   default_daily_limit integer not null default 20 check (default_daily_limit >= 0),
-  model               text    not null default 'gemini-2.5-flash'
+  model               text    not null default 'gemini-3.8-flash'
 );
 insert into public.app_config (id) values (1) on conflict (id) do nothing;
 alter table public.app_config enable row level security;

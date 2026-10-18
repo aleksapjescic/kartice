@@ -97,8 +97,8 @@ function adminDefLimit() {
     } }, { label: t('Otkaži'), kind: 'cancel' }] });
 }
 function adminModel() {
-  modal({ title: t('Gemini model'), text: t('Tačan naziv modela iz AI Studija, na primer gemini-2.5-flash. Ako model ne postoji, korisnici dobijaju poruku da AI nije podešen.'),
-    input: { value: adm.cfg ? adm.cfg.model : '', placeholder: 'gemini-2.5-flash' },
+  modal({ title: t('Gemini model'), text: t('Tačan naziv modela iz AI Studija, na primer gemini-3.8-flash. Ako model ne postoji, korisnici dobijaju poruku da AI nije podešen.'),
+    input: { value: adm.cfg ? adm.cfg.model : '', placeholder: 'gemini-3.8-flash' },
     buttons: [{ label: t('Sačuvaj'), kind: 'primary', onClick: function (v) {
       v = (v || '').trim(); if (!/^[a-z0-9][a-z0-9.\-]{2,80}$/i.test(v)) { toast(t('Naziv modela nije ispravan.')); return false; }
       adminConfig({ model: v });

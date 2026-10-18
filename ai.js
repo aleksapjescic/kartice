@@ -76,7 +76,7 @@ var GEMINI_API = 'https://generativelanguage.googleapis.com/v1beta/';
 var GEMINI_MAX_PDF = 14 * 1048576;   // ceo zahtev sa ugrađenim fajlom sme do 20 MB, a base64 ga uveća za trećinu
 function geminiKey() { try { return localStorage.getItem(GEMINI_KEY) || ''; } catch (e) { return ''; } }
 function geminiModels() { try { return JSON.parse(localStorage.getItem(GEMINI_LIST) || '[]'); } catch (e) { return []; } }
-function geminiModel() { return data.settings.geminiModel || (geminiModels()[0] || {}).id || 'gemini-2.5-flash'; }
+function geminiModel() { return data.settings.geminiModel || (geminiModels()[0] || {}).id || 'gemini-3.8-flash'; }
 async function geminiFetch(path, body) {
   if (body && aiKeySource() === 'app') return appAiFetch(body);
   var r = await fetch(GEMINI_API + path, {

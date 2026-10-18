@@ -32,7 +32,10 @@ Deno.serve(async (req) => {
 
   const key = Deno.env.get("GEMINI_API_KEY");
   if (!key) return json({ error: "no_key" }, 500, cors);
-  const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
+  // stariji projekti daju SUPABASE_SERVICE_ROLE_KEY, noviji (sb_secret_ ključevi) i SUPABASE_SECRET_KEY
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SECRET_KEY");
+  if (!serviceKey) return json({ error: "server" }, 500, cors);
+  const db = createClient(Deno.env.get("SUPABASE_URL")!, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
@@ -71,7 +74,7 @@ Deno.serve(async (req) => {
 
   let res: Response, out: string;
   try {
-    res = await fetch(GEMINI_API + "models/" + encodeURIComponent(t.model ?? "gemini-2.5-flash") + ":generateContent", {
+    res = await fetch(GEMINI_API + "models/" + encodeURIComponent(t.model ?? "gemini-3.8-flash") + ":generateContent", {
       method: "POST",
       headers: { "x-goog-api-key": key, "Content-Type": "application/json" },
       body: JSON.stringify(payload),

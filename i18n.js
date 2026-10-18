@@ -703,7 +703,7 @@ var EN = {
   'Koliko AI poziva dnevno ima korisnik bez svog limita. 0 znači da niko osim administratora ne može da koristi tvoj ključ.': 'How many AI calls per day a user without their own limit gets. 0 means nobody except administrators can use your key.',
   'Upiši ceo broj.': 'Enter a whole number.',
   'Gemini model': 'Gemini model',
-  'Tačan naziv modela iz AI Studija, na primer gemini-2.5-flash. Ako model ne postoji, korisnici dobijaju poruku da AI nije podešen.': 'The exact model name from AI Studio, for example gemini-2.5-flash. If the model doesn’t exist, users get a message that AI is not set up.',
+  'Tačan naziv modela iz AI Studija, na primer gemini-3.8-flash. Ako model ne postoji, korisnici dobijaju poruku da AI nije podešen.': 'The exact model name from AI Studio, for example gemini-3.8-flash. If the model doesn’t exist, users get a message that AI is not set up.',
   'Naziv modela nije ispravan.': 'The model name is not valid.',
   'Registrovan: {d} · Danas {c} poziva, ovog meseca {m} poziva i {k} tokena.': 'Registered: {d} · Today {c} calls, this month {m} calls and {k} tokens.',
   'Sačuvaj limit': 'Save limit',
