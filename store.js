@@ -9,10 +9,28 @@ var TEXT_KEY = 'text:';         // tekst izvučen iz PDF-a ili Word-a za pretrag
 var STATE_KEY = 'data';
 
 var dbPromise = null;
+/* Safari (posebno aplikacija sa početnog ekrana na iPhone-u) ume da ne odgovori na prvi indexedDB.open
+   dok se IndexedDB ne "probudi". Poznato zaobilaženje: pozivati indexedDB.databases() dok ne odgovori
+   (najviše ~2 s), pa tek onda otvoriti bazu. Drugi pregledači odgovore odmah. */
+function idbWake() {
+  if (!indexedDB.databases) return Promise.resolve();
+  return new Promise(function (res) {
+    var tries = 0, timer = null;
+    function ping() {
+      tries++;
+      indexedDB.databases().then(function () { clearInterval(timer); res(); }, function () { clearInterval(timer); res(); });
+      if (tries >= 20) { clearInterval(timer); res(); }
+    }
+    timer = setInterval(ping, 100);
+    ping();
+  });
+}
 function db() {
   if (!dbPromise) {
-    dbPromise = new Promise(function (res, rej) {
+    dbPromise = idbWake().then(function () { return new Promise(function (res, rej) {
       var r = indexedDB.open(FILE_DB, DB_VERSION);
+      // stara veza (druga kartica ili ranija verzija) drži bazu: otvaranje čeka dok se ona ne zatvori
+      r.onblocked = function () { if (typeof console !== 'undefined') console.warn('IndexedDB: čeka se zatvaranje stare veze'); };
       r.onupgradeneeded = function () {
         var d = r.result, have = d.objectStoreNames;
         if (!have.contains('files')) d.createObjectStore('files');
@@ -27,9 +45,20 @@ function db() {
         res(d);
       };
       r.onerror = function () { dbPromise = null; rej(r.error); };
-    });
+    }); });
   }
   return dbPromise;
+}
+// glavni podaci sa vremenskim ograničenjem: ako baza ne odgovori, otvara se ponovo (jednom), a ne učitava se prazno
+function stateGetPatient(ms) {
+  function once() {
+    return Promise.race([stateGet(), new Promise(function (res, rej) { setTimeout(function () { rej(new Error('idb-timeout')); }, ms); })]);
+  }
+  return once().catch(function (e) {
+    if (!e || e.message !== 'idb-timeout') throw e;
+    dbPromise = null;   // sledeći pokušaj otvara novu vezu
+    return once();
+  });
 }
 // jedna transakcija nad jednom prodavnicom; fn vraća zahtev čiji je rezultat odgovor
 function idb(store, mode, fn) {
@@ -75,7 +104,8 @@ function backupDel(id) { return idb('backups', 'readwrite', function (st) { retu
    Vraća { data, from: 'idb' | 'local' | 'new' }. */
 async function loadData() {
   var d = null;
-  try { d = await stateGet(); } catch (e) {}
+  try { d = await stateGetPatient(6000); }
+  catch (e) { if (e && e.message === 'idb-timeout') return { data: null, from: 'stuck' }; }
   if (d && Array.isArray(d.decks)) return { data: d, from: 'idb' };
   try {
     var raw = localStorage.getItem(STORE_KEY);

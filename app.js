@@ -3,7 +3,7 @@
    Pri svakom objavljivanju: povećati APP_VERSION, isti broj upisati u version.json
    i u ?v= parametre u index.html. */
 
-var APP_VERSION = 18;
+var APP_VERSION = 19;
 
 /* ---------- pomoćne funkcije ---------- */
 function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
@@ -3127,6 +3127,13 @@ try { localStorage.removeItem('kartice.layout'); } catch (e) {}
    (sa kopijom starog stanja), pa prvi ekran. */
 async function boot() {
   var r = await loadData();
+  // baza na uređaju ne odgovara (iPhone): ne učitava se prazno preko tvojih podataka, nego se nudi ponovni pokušaj
+  if (r.from === 'stuck') {
+    app.innerHTML = '<div class="screen login-gate"><div class="head login-head"><span class="eyebrow">' + t('Učenje kartica') + '</span><h1>' + t('Kartice') + '</h1></div>' +
+      '<p class="sub">' + t('Podaci na uređaju se sporo otvaraju. Pokušaj ponovo; ako ne pomogne, zatvori aplikaciju i otvori je opet.') + '</p>' +
+      '<button class="btn primary" onclick="location.reload()">' + t('Pokušaj ponovo') + '</button></div>';
+    return;
+  }
   var migrated = false;
   try { migrated = await migrateData(r.data); } catch (e) {}
   data = normalize(r.data);
