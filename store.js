@@ -124,7 +124,8 @@ async function loadData() {
     var raw = localStorage.getItem(STORE_KEY);
     if (raw) { d = JSON.parse(raw); if (d && Array.isArray(d.decks)) return { data: d, from: 'local' }; }
   } catch (e) {}
-  return { data: { decks: [defaultDeck()], theme: 'auto', random: false, schema: SCHEMA }, from: 'new' };
+  // nova instalacija kreće prazna (do verzije 20 dobijala je špil "Računarske mreže")
+  return { data: { decks: [], theme: 'auto', random: false, schema: SCHEMA }, from: 'new' };
 }
 
 /* ---------- migracije ----------
