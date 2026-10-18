@@ -248,6 +248,7 @@ var EN = {
   'Kopija sadrži sve špilove, napredak, beleške, foldere i fajlove. Sačuvaj je u Fajlove ili na računar; tako možeš da preneseš sve na drugi telefon ili pregledač.': 'The backup contains all decks, progress, notes, folders and files. Save it to Files or your computer to move everything to another phone or browser.',
   'O aplikaciji': 'About',
   'Kartice · verzija {v}': 'Flashcards · version {v}',
+  'Politika privatnosti': 'Privacy policy',
   'Izađi iz celog ekrana': 'Exit full screen',
   'Ceo ekran': 'Full screen',
   'Obrisati špil?': 'Delete deck?',

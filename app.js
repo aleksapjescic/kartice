@@ -3,7 +3,7 @@
    Pri svakom objavljivanju: povećati APP_VERSION, isti broj upisati u version.json
    i u ?v= parametre u index.html. */
 
-var APP_VERSION = 15;
+var APP_VERSION = 16;
 
 /* ---------- pomoćne funkcije ---------- */
 function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
@@ -905,6 +905,7 @@ function viewSettings() {
     '</div>' +
     '<div class="section"><h2>' + t('O aplikaciji') + '</h2>' +
       '<p class="small-note">' + t('Kartice · verzija {v}', { v: APP_VERSION }) + '</p>' +
+      '<p class="small-note"><a href="privacy.html" target="_blank" rel="noopener" style="color: inherit">' + t('Politika privatnosti') + '</a></p>' +
     '</div>' +
     '</div>';
 }

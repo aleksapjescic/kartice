@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="sr-Latn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Politika privatnosti · Kartice</title>
+<meta name="description" content="Koje podatke aplikacija Kartice čuva i kako ih koristi">
+<meta name="theme-color" content="#1C1B1A">
+<link rel="icon" type="image/png" href="icon-192.png">
+<!-- samostalna stranica (Google je traži za prijavu); boje i font su isti kao u styles.css -->
+<style>
+:root {
+  --bg: #1C1B1A; --card: #262524; --line: #383634;
+  --ink: #E3DED6; --muted: #A39C92; --accent: #9A9183;
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", system-ui, "Segoe UI", sans-serif;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #EEEBE6; --card: #F7F5F2; --line: #DAD5CE;
+    --ink: #2A2826; --muted: #6A645C; --accent: #5F5850; color-scheme: light;
+  }
+}
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font);
+  line-height: 1.6; -webkit-font-smoothing: antialiased;
+}
+main { max-width: 680px; margin: 0 auto; padding: 32px 16px 56px; }
+h1 { font-size: 30px; line-height: 1.2; margin: 8px 0 4px; letter-spacing: -.01em; }
+h2 { font-size: 19px; margin: 0 0 8px; }
+p, ul { margin: 0 0 10px; }
+ul { padding-left: 20px; }
+li { margin-bottom: 4px; }
+a { color: var(--ink); text-decoration-color: var(--accent); text-underline-offset: 3px; }
+.muted { color: var(--muted); font-size: 14px; }
+.back { display: inline-block; color: var(--muted); text-decoration: none; font-size: 15px; padding: 8px 0; }
+.back:hover { color: var(--ink); }
+section { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px 18px 8px; margin-top: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <a class="back" href="./">‹ Kartice</a>
+  <h1>Politika privatnosti</h1>
+  <p class="muted">Aplikacija Kartice · poslednja izmena: 19. oktobar 2026.</p>
+
+  <section>
+    <h2>Ukratko</h2>
+    <p>Kartice su aplikacija za učenje sa karticama, kvizovima i beleškama. Čuvamo samo ono što je potrebno da tvoj materijal bude isti na svim uređajima i da AI funkcije rade. Podatke ne prodajemo, ne prikazujemo reklame i ne pratimo te.</p>
+  </section>
+
+  <section>
+    <h2>Koje podatke čuvamo</h2>
+    <ul>
+      <li><strong>Podaci sa Google naloga:</strong> e-mail adresa i ime, kad se prijaviš preko Google-a. Ne dobijamo lozinku niti pristup drugim podacima na Google nalogu.</li>
+      <li><strong>Tvoj materijal:</strong> špilovi i kartice, kvizovi, beleške, folderi, fajlovi koje dodaš (PDF, Word, slike) i napredak u učenju.</li>
+    </ul>
+    <p>Kad si prijavljen, ovi podaci se čuvaju u bazi servisa Supabase, na serverima u Evropskoj uniji. Bez prijave sve ostaje samo na tvom uređaju.</p>
+  </section>
+
+  <section>
+    <h2>Kako ih koristimo</h2>
+    <ul>
+      <li><strong>Sinhronizacija:</strong> da isti materijal vidiš na telefonu, tabletu i računaru.</li>
+      <li><strong>AI funkcije:</strong> kad sam pokreneš AI (na primer pravljenje kartica iz beleške), deo materijala se šalje na obradu.</li>
+    </ul>
+    <p>Podatke ne koristimo ni za šta drugo i ne delimo ih ni sa kim, osim sa servisima navedenim na ovoj stranici.</p>
+  </section>
+
+  <section>
+    <h2>AI i Google Gemini</h2>
+    <p>AI funkcije podrazumevano rade preko ključa aplikacije i modela Google Gemini. Tada se tekst ili fajl koji si izabrao šalje Google-u. Aplikacija koristi besplatni nivo Gemini API-ja, pa Google taj materijal sme da koristi za unapređenje svojih modela, u skladu sa <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noopener">uslovima Gemini API-ja</a>. Zato preko AI funkcija ne šalji lične ili poverljive podatke.</p>
+    <p>Ako u podešavanjima uneseš svoj API ključ, on se čuva samo na tvom uređaju, ne šalje se u našu bazu i ne sinhronizuje se. Zahtevi se tada šalju direktno servisu čiji je ključ, po njegovim uslovima.</p>
+  </section>
+
+  <section>
+    <h2>Brisanje podataka</h2>
+    <ul>
+      <li><strong>Odjava:</strong> u podešavanjima se možeš odjaviti; materijal tada ostaje samo na uređaju i više se ne sinhronizuje.</li>
+      <li><strong>Brisanje naloga:</strong> piši nam na <a href="mailto:jovansoft.inc@gmail.com">jovansoft.inc@gmail.com</a> sa adrese kojom se prijavljuješ, i obrisaćemo nalog i sve podatke sa servera.</li>
+      <li><strong>Podaci na uređaju:</strong> brišu se kad obrišeš podatke sajta u pregledaču ili ukloniš aplikaciju.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Kontakt</h2>
+    <p>Za sva pitanja o privatnosti piši na <a href="mailto:jovansoft.inc@gmail.com">jovansoft.inc@gmail.com</a>.</p>
+    <p class="muted">Ako se ova politika promeni, nova verzija biće objavljena na ovoj stranici, sa novim datumom izmene.</p>
+  </section>
+</main>
+</body>
+</html>
