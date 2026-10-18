@@ -3,8 +3,7 @@
    Pri svakom objavljivanju: povećati APP_VERSION, isti broj upisati u version.json
    i u ?v= parametre u index.html. */
 
-var APP_VERSION = 12;
-var STORE_KEY = 'kartice.v1';
+var APP_VERSION = 13;
 
 /* ---------- pomoćne funkcije ---------- */
 function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
@@ -38,62 +37,46 @@ function defaultDeck() {
     cards: DEFAULT_CARDS.map(function (c, i) { return { id: 'c' + i, n: c[0], q: c[1], a: c[2] }; })
   };
 }
-function load() {
-  try {
-    var raw = localStorage.getItem(STORE_KEY);
-    if (raw) { var d = JSON.parse(raw); if (d && Array.isArray(d.decks)) return d; }
-  } catch (e) {}
-  return { decks: [defaultDeck()], theme: 'auto', random: false };
+// podaci se učitavaju asinhrono iz IndexedDB (store.js); do tada je data null, a boot() na kraju fajla crta prvi ekran
+var data = null;
+// podrazumevana polja; poziva se posle učitavanja, vraćanja kopije i sinhronizacije
+function normalize(d) {
+  if (!Array.isArray(d.notes)) d.notes = [];
+  if (!Array.isArray(d.folders)) d.folders = [];
+  if (!Array.isArray(d.quizzes)) d.quizzes = [];
+  if (!d.rev || typeof d.rev !== 'object') d.rev = {};
+  if (!d.days || typeof d.days !== 'object') d.days = {};
+  d.notes.forEach(function (n) { if (!n.type) n.type = 'text'; if (n.folderId === undefined) n.folderId = null; });
+  d.decks.forEach(function (k) { if (!k.known) k.known = {}; if (!k.lang) k.lang = 'sr-RS'; });
+  if (d.tab !== 'notes' && d.tab !== 'quizzes') d.tab = 'decks';
+  d.settings = Object.assign({
+    font: 'system', size: 'm', lang: 'sr', reduceMotion: false, pdfDark: false, pdfMode: 'book',
+    newPerDay: 20, maxReviews: 200, retention: 0.9, goal: 30,       // učenje
+    ttsAuto: false, ttsRate: 1, voices: {},                         // čitanje naglas: glas po jeziku
+    aiProvider: 'claude', aiModel: 'claude-opus-5-5', geminiModel: '', // AI (ključevi nisu ovde, vidi ai.js)
+    remind: false, remindAt: '19:00'                                // podsetnik
+  }, d.settings || {});
+  return d;
 }
-var data = load();
-if (!Array.isArray(data.notes)) data.notes = [];
-if (!Array.isArray(data.folders)) data.folders = [];
-if (!Array.isArray(data.quizzes)) data.quizzes = [];
-data.notes.forEach(function (n) { if (!n.type) n.type = 'text'; if (n.folderId === undefined) n.folderId = null; });
-if (data.tab !== 'notes' && data.tab !== 'quizzes') data.tab = 'decks';
-data.settings = Object.assign({ font: 'system', size: 'm', lang: 'sr', reduceMotion: false, pdfDark: false, pdfMode: 'book' }, data.settings || {});
-setLang(data.settings.lang);
 
-var saveTimer = null;
+var saveTimer = null, saveWarned = false;
 function save() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(saveNow, 150);
 }
 function saveNow() {
   clearTimeout(saveTimer);
-  try { localStorage.setItem(STORE_KEY, JSON.stringify(data)); } catch (e) {}
-}
-
-/* ---------- fajlovi (PDF, DOCX) u IndexedDB; localStorage je premali za njih ---------- */
-var FILE_DB = 'kartice-files', FILE_STORE = 'files';
-var TEXT_KEY = 'text:';   // tekst izvučen iz PDF-a ili Word-a za pretragu čuva se pod 'text:' + fileId
-var dbPromise = null;
-function db() {
-  if (!dbPromise) {
-    dbPromise = new Promise(function (res, rej) {
-      var r = indexedDB.open(FILE_DB, 1);
-      r.onupgradeneeded = function () { r.result.createObjectStore(FILE_STORE); };
-      r.onsuccess = function () { res(r.result); };
-      r.onerror = function () { dbPromise = null; rej(r.error); };
-    });
-  }
-  return dbPromise;
-}
-function idbReq(mode, fn) {
-  return db().then(function (d) {
-    return new Promise(function (res, rej) {
-      var tx = d.transaction(FILE_STORE, mode), st = tx.objectStore(FILE_STORE), out;
-      var r = fn(st);
-      if (r) r.onsuccess = function () { out = r.result; };
-      tx.oncomplete = function () { res(out); };
-      tx.onerror = tx.onabort = function () { rej(tx.error); };
-    });
+  if (!data) return Promise.resolve();
+  return statePut(data).then(function () {
+    if (typeof syncAfterSave === 'function') syncAfterSave();
+  }, function (e) {
+    // pun prostor ili blokirana baza: korisnik mora da zna, inače bi izmene tiho nestajale
+    if (!saveWarned) { saveWarned = true; toast(t('Izmene nisu sačuvane: nema dovoljno prostora na uređaju.')); }
   });
 }
-function filePut(id, rec) { return idbReq('readwrite', function (st) { return st.put(rec, id); }); }
-function fileGet(id) { return idbReq('readonly', function (st) { return st.get(id); }); }
-function fileDel(id) { return idbReq('readwrite', function (st) { return st.delete(id); }); }
-function fileClear() { return idbReq('readwrite', function (st) { return st.clear(); }); }
+// pre zatvaranja ili prelaska u pozadinu (telefon tada ume da ugasi aplikaciju) sve se odmah upisuje
+document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') saveNow(); });
+window.addEventListener('pagehide', function () { saveNow(); });
 
 // fajl obrisane beleške briše se tek kad istekne "Vrati" (zajedno sa tekstom izvučenim za pretragu)
 var pendingFileDeletes = {};
@@ -178,7 +161,11 @@ var ICON = {
   fsOff: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>',
   check: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
   x: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
-  undo: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>'
+  undo: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>',
+  speaker: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5L6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg>',
+  spark: '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l1.9 5.6L19.5 9.5l-5.6 1.9L12 17l-1.9-5.6L4.5 9.5l5.6-1.9zM19 15l.9 2.6 2.6.9-2.6.9L19 22l-.9-2.6-2.6-.9 2.6-.9z"/></svg>',
+  chart: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
+  flame: '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2c1 3.5-1.5 5-1.5 7.5 0 1.4 1 2.5 2.3 2.5 1.6 0 2.6-1.3 2.2-3.4C17.6 10.4 19 12.8 19 15a7 7 0 0 1-14 0c0-4.6 4.4-6.9 7-13z"/></svg>'
 };
 
 function seg(name, opts, current) {
@@ -220,12 +207,13 @@ function viewHome() {
     '<div class="head"><span class="eyebrow">' + t('Učenje kartica') + '</span>' +
     '<div class="head-row"><h1>' + t('Kartice') + '</h1><div class="head-actions">' +
       (!notesTab && (quizTab ? nq : n) ? '<button class="link" data-act="manage">' + (ui.manage ? t('Gotovo') : t('Izmeni')) + '</button>' : '') +
+      '<button class="icon-btn" data-act="stats" aria-label="' + esc(t('Statistika')) + '" title="' + esc(t('Statistika')) + '">' + ICON.chart + '</button>' +
       '<button class="icon-btn" data-act="settings" aria-label="' + esc(t('Podešavanja')) + '" title="' + esc(t('Podešavanja')) + '">' + ICON.gear + '</button>' +
     '</div></div>' +
     '<span class="sub num">' + sub + '</span></div>' +
     seg('tab', [['decks', t('Špilovi')], ['quizzes', t('Kvizovi')], ['notes', t('Beleške')]], data.tab) +
     (notesTab ? viewNotesRoot() : quizTab ? quizList()
-      : '<div class="decks">' + list + (ui.manage ? '' : '<button class="deck add-deck btn" data-act="newDeck">' + t('+ Novi špil') + '</button>') + '</div>') +
+      : (n && !ui.manage ? todayPanel() : '') + '<div class="decks">' + list + (ui.manage ? '' : '<button class="deck add-deck btn" data-act="newDeck">' + t('+ Novi špil') + '</button>') + '</div>') +
     '<div class="spacer"></div>' +
     '<div class="field"><span class="label">' + t('Tema') + '</span>' + themeSeg() + '</div>' +
     '</div>';
@@ -326,21 +314,9 @@ function noteActions(x) {
     '<button class="link" data-act="downloadNote">' + (x.type === 'text' ? t('Preuzmi .txt') : t('Preuzmi')) + '</button></div>';
 }
 
-// jednostavan prikaz teksta: # naslov, ## podnaslov, - stavka, prazan red = novi pasus
+// tekst beleške sa formatiranjem (markup.js)
 function fmtNote(text) {
-  var out = [], para = [], list = [];
-  function flushPara() { if (para.length) { out.push('<p>' + para.join('<br>') + '</p>'); para = []; } }
-  function flushList() { if (list.length) { out.push('<ul>' + list.map(function (l) { return '<li>' + l + '</li>'; }).join('') + '</ul>'); list = []; } }
-  String(text || '').replace(/\r\n?/g, '\n').split('\n').forEach(function (raw) {
-    var line = raw.trim(), m;
-    if (!line) { flushPara(); flushList(); return; }
-    if ((m = line.match(/^##\s+(.*)$/))) { flushPara(); flushList(); out.push('<h3>' + esc(m[1]) + '</h3>'); return; }
-    if ((m = line.match(/^#\s+(.*)$/))) { flushPara(); flushList(); out.push('<h2>' + esc(m[1]) + '</h2>'); return; }
-    if ((m = line.match(/^[-•*]\s+(.*)$/))) { flushPara(); list.push(esc(m[1])); return; }
-    flushList(); para.push(esc(line));
-  });
-  flushPara(); flushList();
-  return out.join('') || '<p class="empty-note">' + t('Ova beleška je prazna.') + '</p>';
+  return String(text || '').trim() ? renderMarkup(text) : '<p class="empty-note">' + t('Ova beleška je prazna.') + '</p>';
 }
 function viewNoteRead() {
   var x = noteById(ui.noteId);
@@ -355,7 +331,8 @@ function viewNoteRead() {
 }
 // kartica od teksta iz beleške; označen tekst se sam upisuje (vidi cardFromNote)
 function cardFromNoteBtn() {
-  return '<button class="link" data-act="cardFromNote">' + t('+ Napravi karticu') + '</button>';
+  return '<button class="link ai-link" data-act="aiStart" data-arg="' + esc(ui.noteId) + '">' + ICON.spark + '<span>' + t('Kartice (AI)') + '</span></button>' +
+    '<button class="link" data-act="cardFromNote">' + t('+ Napravi karticu') + '</button>';
 }
 function viewNoteEdit() {
   var x = noteById(ui.noteId);
@@ -363,7 +340,11 @@ function viewNoteEdit() {
   return '<div class="screen note-edit">' +
     '<div class="topbar">' + backBtn('backFromNote', backLabel()) + noteActions(x) + '</div>' +
     '<input class="input title-input" id="noteTitle" data-note="title" value="' + esc(x.title) + '" placeholder="' + esc(t('Naslov')) + '" aria-label="' + esc(t('Naslov beleške')) + '" autocomplete="off">' +
-    '<textarea class="input note-body" id="noteBody" data-note="body" placeholder="' + esc(t('Piši ovde…')) + '" aria-label="' + esc(t('Tekst beleške')) + '">' + esc(x.body) + '</textarea>' +
+    '<div class="note-tools">' + (ui.notePreview ? '<span></span>' : mdToolbar(['b', 'i', 'mark', 'list', 'math'])) +
+      '<button class="link" data-act="notePreview" aria-pressed="' + !!ui.notePreview + '">' + (ui.notePreview ? t('Piši') : t('Pregled')) + '</button></div>' +
+    (ui.notePreview
+      ? '<div class="reader note-preview-body">' + fmtNote(x.body) + '</div>'
+      : '<textarea class="input note-body" id="noteBody" data-note="body" placeholder="' + esc(t('Piši ovde… **podebljano**, *kurziv*, - lista, $formula$')) + '" aria-label="' + esc(t('Tekst beleške')) + '">' + esc(x.body) + '</textarea>') +
     '<div class="section"><span class="label">' + t('Slike') + (imgs.length ? ' (' + imgs.length + ')' : '') + '</span>' +
       '<div class="note-images">' + imgs.map(function (im, i) {
         return '<button class="thumb" data-act="openImage" data-arg="' + im.fileId + '" aria-label="' + esc(t('Slika {i} od {n}', { i: i + 1, n: imgs.length })) + '"' + bgImage(im.thumb) + '></button>';
@@ -427,9 +408,33 @@ function viewImage() {
 }
 
 /* ---------- ekrani: špil, učenje, kraj, uređivanje ---------- */
+// "12 za ponavljanje · 5 novih"
+function dueText(c) {
+  var parts = [];
+  if (c.learn + c.review) parts.push(t('{n} za ponavljanje', { n: c.learn + c.review }));
+  if (c.fresh) parts.push(c.fresh + ' ' + pw(c.fresh, 'nova'));
+  return parts.join(' · ');
+}
+function whenText(ts) {
+  var days = Math.round((dayStartTs(ts) - dayStartTs(Date.now())) / 864e5);
+  if (days <= 1) return t('sutra');
+  if (days < 7) return t('za {n} dana', { n: days });
+  return fmtDate(ts);
+}
+function nextDueLine(keys) {
+  var nd = nextDue(keys, Date.now());
+  return nd ? t('Sledeće ponavljanje: {when}, {n} {w}.', { when: whenText(nd.ts), n: nd.n, w: pw(nd.n, 'kartica') }) : '';
+}
+function stateLine(sc) {
+  return t('Nove {a} · U učenju {b} · Naučene {c}', { a: sc.fresh, b: sc.learning, c: sc.young + sc.mature });
+}
 function viewDeck() {
   var d = deck();
   var kc = knownCount(d), total = d.cards.length, unk = total - kc, p = pct(d);
+  var keys = deckKeys(d), tc = todayCounts(keys), sc = stateCounts(keys);
+  var review = total === 0 ? '' : tc.total
+    ? '<button class="btn primary big-btn" data-act="startSrs"><span>' + t('Ponavljanje') + ' (' + tc.total + ')</span><small>' + esc(dueText(tc)) + '</small></button>'
+    : '<div class="panel done-today"><b>' + ICON.check + ' ' + t('Za danas gotovo') + '</b><span>' + esc(nextDueLine(keys)) + '</span></div>';
   return '<div class="screen deck-wide">' +
     '<div class="topbar">' + backBtn('home', t('Špilovi')) + '</div>' +
     '<div class="deck-menu">' +
@@ -437,76 +442,162 @@ function viewDeck() {
         '<div class="head" style="padding-top:0"><span class="eyebrow">' + esc(d.tag || t('Špil')) + '</span><h1>' + esc(d.name || t('Bez naziva')) + '</h1>' +
         '<span class="sub num">' + total + ' ' + pw(total, 'kartica') + '</span></div>' +
         '<div class="panel"><div class="row-between"><span style="font-size:15px;color:var(--muted)">' + t('Naučeno') + '</span>' +
-        '<span style="font-size:15px"><b style="font-weight:600">' + p + '%</b><span style="color:var(--muted)"> · ' + kc + ' / ' + total + '</span></span></div>' + bar(p) + '</div>' +
+        '<span style="font-size:15px"><b style="font-weight:600">' + p + '%</b><span style="color:var(--muted)"> · ' + kc + ' / ' + total + '</span></span></div>' + bar(p) +
+        (total ? '<span class="small-note num">' + esc(stateLine(sc)) + '</span>' : '') + '</div>' +
       '</div>' +
       '<div class="col">' +
-        '<div class="field"><span class="label">' + t('Redosled') + '</span>' + seg('order', [['seq', t('Po redu')], ['rnd', t('Nasumično')]], data.random ? 'rnd' : 'seq') + '</div>' +
-        '<div class="field"><span class="label">' + t('Smer') + '</span>' + seg('side', [['qa', t('Pitanje → odgovor')], ['aq', t('Odgovor → pitanje')]], data.reverse ? 'aq' : 'qa') + '</div>' +
         '<div class="stack">' +
           (total === 0 ? '<p class="sub" style="margin:0;font-size:15px">' + t('Špil je prazan. Dodaj prve kartice.') + '</p>' : '') +
-          '<button class="btn primary" data-act="startAll"' + (total ? '' : ' disabled') + '>' + t('Počni sve kartice') + '</button>' +
-          (kc > 0 && unk > 0 ? '<button class="btn" data-act="startUnknown">' + t('Samo nenaučene ({n})', { n: unk }) + '</button>' : '') +
+          review +
+        '</div>' +
+        (total ? '<details class="free"' + (tc.total ? '' : ' open') + '><summary>' + t('Slobodno učenje') + '</summary><div class="body">' +
+          '<p class="small-note">' + t('Učiš kad hoćeš i koliko hoćeš; raspored ponavljanja se ne menja.') + '</p>' +
+          '<div class="field"><span class="label">' + t('Redosled') + '</span>' + seg('order', [['seq', t('Po redu')], ['rnd', t('Nasumično')]], data.random ? 'rnd' : 'seq') + '</div>' +
+          '<div class="field"><span class="label">' + t('Smer') + '</span>' + seg('side', [['qa', t('Pitanje → odgovor')], ['aq', t('Odgovor → pitanje')]], data.reverse ? 'aq' : 'qa') + '</div>' +
+          toggleRow('typeAnswer', t('Kucanje odgovora'), t('Prvo upišeš odgovor, pa ga uporediš sa tačnim. Važi i za ponavljanje.')) +
+          '<div class="row-btns even"><button class="btn" data-act="startAll">' + t('Sve kartice') + '</button>' +
+          '<button class="btn" data-act="startUnknown"' + (unk ? '' : ' disabled') + '>' + t('Nenaučene ({n})', { n: unk }) + '</button></div>' +
+        '</div></details>' : '') +
+        '<div class="stack">' +
           '<button class="btn" data-act="edit">' + t('Izmeni kartice') + '</button>' +
           '<div style="display:flex;justify-content:center;flex-wrap:wrap;gap:4px 16px">' +
-            (kc > 0 ? '<button class="link" data-act="reset">' + t('Resetuj napredak') + '</button>' : '') +
+            (kc > 0 || sc.fresh < keys.length ? '<button class="link" data-act="reset">' + t('Resetuj napredak') + '</button>' : '') +
             '<button class="link danger" data-act="delDeck">' + t('Obriši špil') + '</button>' +
           '</div>' +
         '</div>' +
       '</div>' +
     '</div></div>';
 }
-// strana kartice koja se prvo vidi i ona koja je odgovor; učenje obrnuto ih menja
-function cardSides(d, c) {
-  var no = esc(cardNo(d, c));
-  var q = { label: t('Pitanje {n}', { n: no }), text: c.q || '', img: c.qImg };
-  var a = { label: t('Odgovor {n}', { n: no }), text: c.a || '', img: c.aImg };
-  return data.reverse ? { front: a, back: q } : { front: q, back: a };
-}
 function hasAnswer(c) { return !!((c.a && c.a.trim()) || c.aImg); }
+/* strane stavke: front se prvo vidi, back je odgovor.
+   Praznina: napred tekst sa skrivenom prazninom, pozadi isti tekst sa otkrivenom. Obrnuto važi samo u slobodnom učenju. */
+function studySides(it) {
+  var d = it.deck, c = it.card, no = esc(cardNo(d, c));
+  if (it.n) {
+    var cnt = clozeCount(c.q), label = t('Pitanje {n}', { n: no }) + (cnt > 1 ? ' · ' + t('praznina {i} od {n}', { i: it.n, n: cnt }) : '');
+    var part = clozeParts(c.q)[it.n - 1] || { ans: '' };
+    return { cloze: true, front: { label: label, md: clozeText(c.q, it.n, false), img: c.qImg },
+      back: { md: clozeText(c.q, it.n, true), extra: c.a || '', img: c.aImg }, expect: part.ans };
+  }
+  var q = { label: t('Pitanje {n}', { n: no }), md: c.q || '', img: c.qImg };
+  var a = { label: t('Odgovor {n}', { n: no }), md: c.a || '', img: c.aImg };
+  return ui.mode === 'free' && data.reverse ? { front: a, back: q, rev: true, expect: c.q } : { front: q, back: a, expect: c.a };
+}
+// zvučnik: čita prednju ili zadnju stranu
+function speakBtn(side) {
+  if (!ttsAvailable()) return '';
+  return '<button class="speak" data-act="speak" data-arg="' + side + '" aria-label="' + esc(t('Pročitaj naglas')) + '" title="' + esc(t('Pročitaj naglas')) + '">' + ICON.speaker + '</button>';
+}
 function viewStudy() {
-  var d = deck();
-  var c = cardById(d, ui.order[ui.i]);
-  var sd = cardSides(d, c), rev = !!data.reverse;
-  var kc = knownCount(d), total = d.cards.length, p = pct(d);
+  // stavka čija je kartica obrisana usred kruga se preskače
+  while (ui.i < ui.order.length && !itemOf(ui.order[ui.i])) ui.order.splice(ui.i, 1);
+  if (ui.i >= ui.order.length) { ui.screen = 'done'; return viewDone(); }
+  var it = itemOf(ui.order[ui.i]), d = it.deck, sd = studySides(it), srsMode = ui.mode === 'srs';
   var anim = ui.tick !== lastTick ? ' in-' + ui.dir : '';
   var undo = ui.hist.length ? '<button class="link undo" data-act="undoMark" title="' + esc(t('Poništi poslednji odgovor')) + ' (Z)">' + ICON.undo + '<span>' + t('Poništi') + '</span></button>' : '';
+  var back = ui.scope === 'all' ? backBtn('home', t('Početna')) : backBtn('toDeck', t('Meni'));
+  var progress;
+  if (srsMode) {
+    var tot = dayTotals(dayKey()), goal = data.settings.goal || 0, gp = goal ? Math.min(100, tot.a / goal * 100) : 0;
+    progress = '<div class="known-row"><span>' + (ui.scope === 'all' ? t('Svi špilovi') : esc(d.name || t('Bez naziva'))) + '</span>' +
+      '<span>' + t('Danas') + ' <b>' + tot.a + '</b>' + (goal ? ' / ' + goal : '') + '</span></div>' + bar(gp, 'thin');
+  } else {
+    var kc = knownCount(d), total = d.cards.length, p = pct(d);
+    progress = '<div class="known-row"><span>' + t('Naučeno') + '</span><span><b>' + p + '%</b> · ' + kc + ' / ' + total + '</span></div>' + bar(p, 'thin');
+  }
   var top = '<div class="study-top">' +
-    '<div class="topbar">' + backBtn('toDeck', t('Meni')) +
+    '<div class="topbar">' + back +
     '<div class="topbar-actions">' + undo + '<span class="num" style="font-size:15px;color:var(--muted)">' + (ui.i + 1) + ' / ' + ui.order.length + '</span></div></div>' +
     '<div class="bar hair"><span style="width:' + (ui.i / ui.order.length * 100) + '%"></span></div>' +
-    '<div style="display:flex;flex-direction:column;gap:6px"><div class="known-row"><span>' + t('Naučeno') + '</span><span><b>' + p + '%</b> · ' + kc + ' / ' + total + '</span></div>' + bar(p, 'thin') + '</div>' +
+    '<div style="display:flex;flex-direction:column;gap:6px">' + progress + '</div>' +
     '</div>';
+  var typing = !!data.settings.typeAnswer && !!plainText(sd.expect || '').trim();
   var body, actions, keys;
   if (!ui.flipped) {
     // dug tekst (npr. odgovor pri učenju obrnuto) dobija manja slova
-    var long = sd.front.text.length > 160;
-    var front = '<span class="q-big' + (long ? ' long' : '') + '">' + esc(sd.front.text) + '</span>';
-    if (sd.front.img) front = '<span class="front-body">' + front + cardImgTag(sd.front.img) + '</span>';
+    var long = plainText(sd.front.md).length > 160;
+    var front = '<div class="q-big md' + (long ? ' long' : '') + '">' + renderMarkup(sd.front.md) + '</div>';
+    if (sd.front.img) front = '<div class="front-body">' + front + cardImgTag(sd.front.img) + '</div>';
     body = '<button class="card front' + anim + '" data-act="flip" aria-label="' + esc(t('Okreni karticu')) + '">' +
       '<span class="eyebrow">' + sd.front.label + '</span>' + front +
-      '<span class="hint"><span class="touch-only">' + t('Dodirni za odgovor') + '</span><span class="mouse-only">' + t('Klikni za odgovor') + '</span></span></button>';
-    actions = '<div class="actions front">' +
-      '<button class="btn icon" data-act="prev" aria-label="' + esc(t('Prethodna kartica')) + '"' + (ui.i === 0 ? ' disabled' : '') + '>' + ICON.prev + '</button>' +
-      '<button class="btn primary" data-act="flip">' + t('Prikaži odgovor') + '</button></div>';
-    keys = '<div class="keys"><span><kbd>' + t('Razmak') + '</kbd> ' + t('okreni') + '</span><span><kbd>←</kbd> ' + t('prethodna') + '</span><span><kbd>Esc</kbd> ' + t('meni') + '</span></div>';
+      '<span class="hint"><span class="touch-only">' + t('Dodirni za odgovor') + '</span><span class="mouse-only">' + t('Klikni za odgovor') + '</span></span></button>' +
+      speakBtn('front');
+    actions = typing
+      ? '<div class="actions typing"><input class="input" id="typeAns" value="' + esc(ui.typed || '') + '" placeholder="' + esc(t('Upiši odgovor…')) + '" aria-label="' + esc(t('Tvoj odgovor')) + '" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="done">' +
+        '<button class="btn primary" data-act="flip">' + t('Proveri') + '</button></div>'
+      : '<div class="actions front">' +
+        '<button class="btn icon" data-act="prev" aria-label="' + esc(t('Prethodna kartica')) + '"' + (ui.i === 0 || srsMode ? ' disabled' : '') + '>' + ICON.prev + '</button>' +
+        '<button class="btn primary" data-act="flip">' + t('Prikaži odgovor') + '</button></div>';
+    keys = '<div class="keys"><span><kbd>' + t('Razmak') + '</kbd> ' + t('okreni') + '</span>' + (srsMode ? '' : '<span><kbd>←</kbd> ' + t('prethodna') + '</span>') + '<span><kbd>Esc</kbd> ' + t('meni') + '</span></div>';
   } else {
-    var b = sd.back;
-    var ans = (b.text.trim() ? '<span>' + esc(b.text) + '</span>' : '') + cardImgTag(b.img);
-    if (!ans && !rev) ans = '<span class="empty">' + t('Za ovo pitanje nema tekstualnog odgovora (zadatak je crtež).') + '</span>';
+    var b = sd.back, ans;
+    if (sd.cloze) {
+      ans = '<div class="md">' + renderMarkup(b.md) + '</div>' + (b.extra.trim() ? '<div class="md extra">' + renderMarkup(b.extra) + '</div>' : '') + cardImgTag(b.img);
+    } else {
+      ans = (b.md.trim() ? '<div class="md">' + renderMarkup(b.md) + '</div>' : '') + cardImgTag(b.img);
+      if (!ans && !sd.rev) ans = '<span class="empty">' + t('Za ovo pitanje nema tekstualnog odgovora (zadatak je crtež).') + '</span>';
+    }
+    var typed = typing ? typedCompare(ui.typed || '', sd.expect) : '';
     body = '<div class="card back">' +
-      '<button class="q-small' + (rev ? ' clamp' : '') + '" data-act="flip"><span class="eyebrow">' + sd.front.label + '</span><span>' + esc(sd.front.text) + '</span></button>' +
-      '<div class="divider"></div>' +
+      (sd.cloze ? '' : '<button class="q-small' + (sd.rev ? ' clamp' : '') + '" data-act="flip"><span class="eyebrow">' + sd.front.label + '</span><span class="md">' + renderMarkup(sd.front.md, { inline: true }) + '</span></button>' +
+      '<div class="divider"></div>') +
+      typed +
       '<div class="answer-scroll"><button class="answer" data-act="flip" aria-label="' + esc(t('Vrati na pitanje')) + '">' + ans + '</button></div>' +
-      '<span class="hint"><span class="touch-only">' + t('Prevuci desno ako znaš, levo ako ne znaš') + '</span><span class="mouse-only">' + t('Klikni karticu za pitanje') + '</span></span></div>';
-    actions = '<div class="actions back">' +
-      '<button class="btn" data-act="no">' + t('Ne znam') + '</button>' +
-      '<button class="btn primary" data-act="yes">' + t('Znam') + '</button></div>';
-    keys = '<div class="keys"><span><kbd>1</kbd> ' + t('ili') + ' <kbd>←</kbd> ' + t('ne znam') + '</span><span><kbd>2</kbd> ' + t('ili') + ' <kbd>→</kbd> ' + t('znam') + '</span><span><kbd>' + t('Razmak') + '</kbd> ' + t('pitanje') + '</span></div>';
+      '<span class="hint"><span class="touch-only">' + (srsMode ? t('Prevuci desno za Dobro, levo za Ponovo') : t('Prevuci desno ako znaš, levo ako ne znaš')) + '</span><span class="mouse-only">' + t('Klikni karticu za pitanje') + '</span></span></div>' +
+      speakBtn('back');
+    if (srsMode) {
+      var pv = srsPreview(ui.order[ui.i], Date.now());
+      actions = '<div class="actions rate">' + [[1, 'Ponovo', 'again'], [2, 'Teško', 'hard'], [3, 'Dobro', 'good'], [4, 'Lako', 'easy']].map(function (r) {
+        return '<button class="btn rate-' + r[2] + '" data-act="rate" data-arg="' + r[0] + '"><span>' + t(r[1]) + '</span><small>' + esc(pv[r[0]]) + '</small></button>';
+      }).join('') + '</div>';
+      keys = '<div class="keys"><span><kbd>1</kbd>–<kbd>4</kbd> ' + t('ocena') + '</span><span><kbd>←</kbd> ' + t('ponovo') + '</span><span><kbd>→</kbd> ' + t('dobro') + '</span><span><kbd>Z</kbd> ' + t('poništi') + '</span></div>';
+    } else {
+      actions = '<div class="actions back">' +
+        '<button class="btn" data-act="no">' + t('Ne znam') + '</button>' +
+        '<button class="btn primary" data-act="yes">' + t('Znam') + '</button></div>';
+      keys = '<div class="keys"><span><kbd>1</kbd> ' + t('ili') + ' <kbd>←</kbd> ' + t('ne znam') + '</span><span><kbd>2</kbd> ' + t('ili') + ' <kbd>→</kbd> ' + t('znam') + '</span><span><kbd>' + t('Razmak') + '</kbd> ' + t('pitanje') + '</span></div>';
+    }
+    if (aiReady()) actions += '<div class="explain-row"><button class="link" data-act="explain">' + ICON.spark + '<span>' + t('Objasni mi') + '</span></button></div>';
   }
   return '<div class="screen study">' + top + '<div class="card-area" id="cardArea">' + body + '</div>' + actions + keys + '</div>';
 }
+/* kucanje odgovora: reči iz tvog odgovora koje postoje u tačnom (istim redom) su zelene, ostale crvene */
+function words(s) { return plainText(s).split(/\s+/).filter(Boolean); }
+function wnorm(w) { return fold(w).replace(/[^\p{L}\p{N}]+/gu, ''); }
+function typedCompare(typed, expect) {
+  var a = words(typed), b = words(expect).map(wnorm).filter(Boolean);
+  if (!a.length) return '<div class="typed empty">' + t('Nisi upisao odgovor.') + '</div>';
+  var an = a.map(wnorm), n = an.length, m = b.length, L = [];
+  for (var i = 0; i <= n; i++) { L.push(new Array(m + 1).fill(0)); }
+  for (i = n - 1; i >= 0; i--) for (var j = m - 1; j >= 0; j--) L[i][j] = an[i] && an[i] === b[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+  var ok = {}, x = 0, y = 0;
+  while (x < n && y < m) { if (an[x] && an[x] === b[y]) { ok[x] = 1; x++; y++; } else if (L[x + 1][y] >= L[x][y + 1]) x++; else y++; }
+  var hit = Object.keys(ok).length, all = b.length;
+  var exact = hit === all && hit === an.filter(Boolean).length;
+  return '<div class="typed' + (exact ? ' exact' : '') + '"><span class="label">' + (exact ? t('Tačno!') : t('Tvoj odgovor · pogođeno {k} od {n} reči', { k: hit, n: all })) + '</span>' +
+    '<span>' + a.map(function (w, k) { return '<span class="' + (ok[k] ? 'w-ok' : 'w-bad') + '">' + esc(w) + '</span>'; }).join(' ') + '</span></div>';
+}
 function viewDone() {
   var d = deck();
+  // ponavljanje, ili slobodno učenje iz više špilova (najteže kartice): sažetak kruga
+  if (ui.mode === 'srs' || ui.scope === 'all') {
+    var srsMode = ui.mode === 'srs', s = ui.sess || { a: 0, ok: 0, ms: 0 }, keys = ui.scope === 'all' ? allDeckKeys() : deckKeys(d);
+    var left = srsMode ? todayCounts(keys) : { total: 0 }, fresh = srsMode ? splitDue(keys, Date.now()).fresh.length : 0;
+    var pc = s.a ? Math.round(s.ok / s.a * 100) : 0, mins = Math.max(1, Math.round(s.ms / 60000));
+    return '<div class="screen done">' +
+      '<div style="display:flex;flex-direction:column;gap:8px">' +
+        '<span class="eyebrow">' + (left.total || !srsMode ? t('Krug završen') : t('Za danas gotovo')) + '</span>' +
+        '<span class="big-pct num">' + s.a + '</span>' +
+        '<span class="sub">' + t('{n} odgovora · tačno {p}% · {m} min', { n: s.a, p: pc, m: mins }) + '</span>' +
+        (left.total || !srsMode ? '' : '<span class="sub">' + esc(nextDueLine(keys)) + '</span>') +
+      '</div>' +
+      '<div class="stack">' +
+        (left.total ? '<button class="btn primary" data-act="startSrs">' + t('Nastavi ({n})', { n: left.total }) + '</button>' : '') +
+        (!left.total && fresh ? '<button class="btn" data-act="moreNew">' + t('Još 10 novih kartica') + '</button>' : '') +
+        '<button class="btn' + (left.total ? '' : ' primary') + '" data-act="' + (ui.scope === 'all' ? 'home' : 'toDeck') + '">' + t('Glavni meni') + '</button>' +
+        (ui.hist.length ? '<button class="link undo" data-act="undoMark">' + ICON.undo + '<span>' + t('Poništi poslednji odgovor') + '</span></button>' : '') +
+      '</div></div>';
+  }
   var kc = knownCount(d), total = d.cards.length, unk = total - kc, p = pct(d);
   return '<div class="screen done">' +
     '<div style="display:flex;flex-direction:column;gap:8px">' +
@@ -535,15 +626,30 @@ function editSearch(n, label) {
   return '<input class="input search" id="cardSearch" type="search" value="' + esc(ui.cardQuery) + '" placeholder="' + esc(label) + '" aria-label="' + esc(label) + '" autocomplete="off">' +
     '<p class="small-note" id="cardSearchInfo" hidden></p>';
 }
+// napomena ispod teksta sa prazninama
+function clozeNote(n) {
+  return n ? t('Praznina: {n}. Svaka se uči kao posebna kartica.', { n: n }) : t('Označi reč i dodirni […] da postane praznina, ili je upiši kao {{reč}}.');
+}
+// tip kartice u izmeni: pitanje/odgovor ili praznine
+function cardTypeSeg(c) {
+  var cl = c.type === 'cloze';
+  return '<div class="seg mini" style="--n:2">' +
+    '<button data-act="cardType" data-arg="' + c.id + ':qa" aria-pressed="' + !cl + '">' + t('P/O') + '</button>' +
+    '<button data-act="cardType" data-arg="' + c.id + ':cloze" aria-pressed="' + cl + '">' + t('Praznine') + '</button></div>';
+}
 function viewEdit() {
   var d = deck();
   var cards = d.cards.map(function (c) {
+    var cl = c.type === 'cloze', nGaps = cl ? clozeCount(c.q) : 0;
     return '<div class="ed-card" data-card="' + c.id + '">' +
       '<div class="ed-top"><span class="eyebrow">' + t('Pitanje {n}', { n: esc(cardNo(d, c)) }) + '</span>' +
-      '<button class="link danger" data-act="delCard" data-arg="' + c.id + '">' + t('Obriši') + '</button></div>' +
-      '<textarea class="input ed-q" id="q-' + c.id + '" data-field="q" data-id="' + c.id + '" rows="1" placeholder="' + esc(t('Pitanje')) + '" aria-label="' + esc(t('Pitanje')) + '">' + esc(c.q) + '</textarea>' +
+      '<div class="ed-top-actions">' + cardTypeSeg(c) +
+      '<button class="link danger" data-act="delCard" data-arg="' + c.id + '">' + t('Obriši') + '</button></div></div>' +
+      mdToolbar(cl ? null : ['b', 'i', 'mark', 'list', 'math']) +
+      '<textarea class="input ed-q" id="q-' + c.id + '" data-field="q" data-id="' + c.id + '" rows="1" placeholder="' + esc(cl ? t('Tekst sa {{prazninama}}') : t('Pitanje')) + '" aria-label="' + esc(cl ? t('Tekst sa prazninama') : t('Pitanje')) + '">' + esc(c.q) + '</textarea>' +
+      (cl ? '<p class="small-note cloze-note" id="cn-' + c.id + '">' + esc(clozeNote(nGaps)) + '</p>' : '') +
       cardImgEdit(c, 'q') +
-      '<textarea class="input" id="a-' + c.id + '" data-field="a" data-id="' + c.id + '" rows="2" placeholder="' + esc(t('Odgovor')) + '" aria-label="' + esc(t('Odgovor')) + '">' + esc(c.a) + '</textarea>' +
+      '<textarea class="input" id="a-' + c.id + '" data-field="a" data-id="' + c.id + '" rows="2" placeholder="' + esc(cl ? t('Dodatno objašnjenje (nije obavezno)') : t('Odgovor')) + '" aria-label="' + esc(cl ? t('Dodatno objašnjenje') : t('Odgovor')) + '">' + esc(c.a) + '</textarea>' +
       cardImgEdit(c, 'a') +
       ((!c.qImg || !c.aImg) ? '<div class="ed-foot">' +
         (c.qImg ? '<span></span>' : '<button class="link" data-act="addCardImg" data-arg="' + c.id + ':q">' + t('+ Slika uz pitanje') + '</button>') +
@@ -558,6 +664,10 @@ function viewEdit() {
     '<input class="input name-input" id="deckName" data-deck="name" value="' + esc(d.name) + '" placeholder="' + esc(t('Naziv špila')) + '" autocomplete="off"></div>' +
     '<div class="field"><label class="label" for="deckTag">' + t('Podnaslov') + '</label>' +
     '<input class="input" id="deckTag" data-deck="tag" value="' + esc(d.tag || '') + '" placeholder="' + esc(t('npr. Pitanja za test')) + '" autocomplete="off"></div>' +
+    (ttsAvailable() ? '<div class="field"><label class="label" for="deckLang">' + t('Jezik za čitanje naglas') + '</label>' +
+      '<select class="input" id="deckLang" data-deck="lang">' + TTS_LANGS.map(function (l) {
+        return '<option value="' + l[0] + '"' + ((d.lang || 'sr-RS') === l[0] ? ' selected' : '') + '>' + esc(t(l[1])) + '</option>';
+      }).join('') + '</select></div>' : '') +
     '<details class="import"' + (d.cards.length ? '' : ' open') + '><summary>' + t('Uvezi više kartica iz teksta') + '</summary><div class="body">' +
       '<p>' + t('Nalepi tekst. Kartice odvoji praznim redom: prvi red je pitanje, ostali redovi su odgovor. Radi i format pitanje[Tab]odgovor po redu, kao izvoz iz Quizleta.') + '</p>' +
       '<textarea class="input" id="importText" rows="6" placeholder="' + esc(t('Šta je IP adresa?\nJedinstvena adresa uređaja u mreži.\n\nŠta je ruter?\nUređaj koji povezuje mreže.')) + '"></textarea>' +
@@ -566,7 +676,8 @@ function viewEdit() {
     '<div class="row-between"><span class="label">' + t('Kartice ({n})', { n: d.cards.length }) + '</span></div>' +
     editSearch(d.cards.length, t('Pretraži kartice')) +
     '<div class="ed-list">' + cards + '</div>' +
-    '<button class="btn add-deck" data-act="addCard">' + t('+ Nova kartica') + '</button>' +
+    '<div class="row-btns"><button class="btn add-deck" data-act="addCard">' + t('+ Nova kartica') + '</button>' +
+    '<button class="btn" data-act="aiFromDeck">' + ICON.spark + ' ' + t('Iz beleške (AI)') + '</button></div>' +
     '<input type="file" id="cardImageFile" accept="image/*" hidden>' +
     '</div>';
 }
@@ -576,7 +687,8 @@ function quizList() {
   var noName = t('Bez naziva');
   var list = data.quizzes.map(function (z) {
     var n = playable(z).length, p = quizPct(z);
-    var meta = '<span class="deck-meta">' + n + ' ' + pw(n, 'pitanje') + ' · ' + t('{p}% naučeno', { p: p }) + '</span>';
+    var due = todayCounts(quizKeys(z)).total;
+    var meta = '<span class="deck-meta">' + n + ' ' + pw(n, 'pitanje') + ' · ' + t('{p}% naučeno', { p: p }) + (due ? ' · ' + t('{n} za ponavljanje', { n: due }) : '') + '</span>';
     if (ui.manage) {
       return '<div class="deck managed"><div class="deck-info"><span class="deck-name">' + esc(z.name || noName) + '</span>' + meta + '</div>' +
         '<button class="del-btn" data-act="delQuiz" data-arg="' + z.id + '">' + t('Obriši') + '</button></div>';
@@ -586,6 +698,12 @@ function quizList() {
   }).join('');
   return (data.quizzes.length ? '' : '<p class="empty-note">' + t('Kviz ima pitanja sa ponuđenim odgovorima. Napravi novi kviz, pa unesi pitanja jedno po jedno ili ih nalepi iz teksta.') + '</p>') +
     '<div class="decks">' + list + (ui.manage ? '' : '<button class="deck add-deck btn" data-act="newQuiz">' + t('+ Novi kviz') + '</button>') + '</div>';
+}
+// ponavljanje kviza po rasporedu, ili poruka da je za danas gotovo
+function quizReviewBtn(z) {
+  var keys = quizKeys(z), tc = todayCounts(keys);
+  return tc.total ? '<button class="btn primary big-btn" data-act="startQuizSrs"><span>' + t('Ponavljanje') + ' (' + tc.total + ')</span><small>' + esc(dueText(tc)) + '</small></button>'
+    : '<div class="panel done-today"><b>' + ICON.check + ' ' + t('Za danas gotovo') + '</b><span>' + esc(nextDueLine(keys)) + '</span></div>';
 }
 function viewQuiz() {
   var z = quiz();
@@ -605,7 +723,8 @@ function viewQuiz() {
         '<div class="stack">' +
           (z.questions.length === 0 ? '<p class="sub" style="margin:0;font-size:15px">' + t('Kviz je prazan. Dodaj prva pitanja.') + '</p>' : '') +
           (unfinished ? '<p class="small-note">' + t('Nedovršenih pitanja: {n}. Dovrši ih u izmeni da bi ušla u kviz.', { n: unfinished }) + '</p>' : '') +
-          '<button class="btn primary" data-act="startQuiz"' + (total ? '' : ' disabled') + '>' + t('Počni kviz') + '</button>' +
+          (total ? quizReviewBtn(z) : '') +
+          '<button class="btn" data-act="startQuiz"' + (total ? '' : ' disabled') + '>' + t('Ceo kviz') + '</button>' +
           (kc > 0 && unk > 0 ? '<button class="btn" data-act="startQuizUnknown">' + t('Samo nenaučena ({n})', { n: unk }) + '</button>' : '') +
           '<button class="btn" data-act="editQuiz">' + (z.questions.length ? t('Izmeni pitanja') : t('Dodaj pitanja')) + '</button>' +
           '<div style="display:flex;justify-content:center;flex-wrap:wrap;gap:4px 16px">' +
@@ -629,13 +748,13 @@ function viewQuizPlay() {
     '</div>';
   var body = '<div class="quiz-body">' +
     '<div class="quiz-q' + anim + '"><span class="eyebrow">' + t('Pitanje {n}', { n: esc(quizNo(z, q)) }) + '</span>' +
-      '<span class="quiz-q-text">' + esc(q.q) + '</span></div>' +
+      '<div class="quiz-q-text md">' + renderMarkup(q.q) + '</div></div>' +
     '<div class="opts' + anim + '">' + opts.map(function (o, k) {
       var cls = 'opt';
       if (answered) cls += o.i === q.correct ? ' right' : o.i === s.picked ? ' wrong' : ' dim';
       return '<button class="' + cls + '" data-act="pick" data-arg="' + o.i + '"' + (answered ? ' disabled' : '') + '>' +
         '<span class="opt-key">' + (answered && o.i === q.correct ? ICON.check : answered && o.i === s.picked ? ICON.x : LETTERS[k]) + '</span>' +
-        '<span class="opt-text">' + esc(o.t) + '</span></button>';
+        '<span class="opt-text md">' + renderMarkup(o.t, { inline: true }) + '</span></button>';
     }).join('') + '</div></div>';
   var last = s.i + 1 >= s.order.length;
   var actions = answered
@@ -654,7 +773,7 @@ function viewQuizDone() {
   var all = playable(z).length, unk = all - quizKnown(z);
   var mistakes = s.wrong.map(function (id) { return qById(z, id); }).filter(Boolean).map(function (q) {
     var right = q.options[q.correct] || '';
-    return '<div class="mistake"><b>' + esc(q.q) + '</b><span>' + ICON.check + esc(right) + '</span></div>';
+    return '<div class="mistake"><b class="md">' + renderMarkup(q.q, { inline: true }) + '</b><span>' + ICON.check + '<span class="md">' + renderMarkup(right, { inline: true }) + '</span></span></div>';
   }).join('');
   return '<div class="screen quiz-done">' +
     '<div class="spacer"></div>' +
@@ -686,6 +805,7 @@ function viewQuizEdit() {
     return '<div class="ed-card" data-card="' + q.id + '">' +
       '<div class="ed-top"><span class="eyebrow">' + t('Pitanje {n}', { n: esc(quizNo(z, q)) }) + '</span>' +
       '<button class="link danger" data-act="delQuestion" data-arg="' + q.id + '">' + t('Obriši') + '</button></div>' +
+      mdToolbar(['b', 'i', 'mark', 'math']) +
       '<textarea class="input ed-q" id="qq-' + q.id + '" data-qq="1" data-id="' + q.id + '" rows="1" placeholder="' + esc(t('Pitanje')) + '" aria-label="' + esc(t('Pitanje')) + '">' + esc(q.q) + '</textarea>' +
       '<div class="ed-opts">' + opts + '</div>' +
       '<div class="ed-foot">' +
@@ -709,7 +829,8 @@ function viewQuizEdit() {
       (z.questions.length ? '<span class="label">' + t('Krug označava tačan odgovor') + '</span>' : '') + '</div>' +
     editSearch(z.questions.length, t('Pretraži pitanja')) +
     '<div class="ed-list">' + list + '</div>' +
-    '<button class="btn add-deck" data-act="addQuestion">' + t('+ Novo pitanje') + '</button>' +
+    '<div class="row-btns"><button class="btn add-deck" data-act="addQuestion">' + t('+ Novo pitanje') + '</button>' +
+    '<button class="btn" data-act="aiFromQuiz">' + ICON.spark + ' ' + t('Iz beleške (AI)') + '</button></div>' +
     '</div>';
 }
 
@@ -719,11 +840,30 @@ function toggleRow(key, label, note) {
   return '<button class="toggle-row" role="switch" aria-checked="' + on + '" data-act="toggleSetting" data-arg="' + key + '">' +
     '<span>' + label + (note ? '<small>' + note + '</small>' : '') + '</span><span class="switch" aria-hidden="true"></span></button>';
 }
+// izbor broja u podešavanjima: data-arg je "ključ:vrednost"
+function numSeg(key, opts) {
+  var cur = String(data.settings[key]);
+  return seg('setNum', opts.map(function (o) { return [key + ':' + o[0], o[1]]; }), key + ':' + cur);
+}
+// glas za svaki jezik koji koriste špilovi
+function voiceFields() {
+  var langs = [];
+  data.decks.forEach(function (d) { var l = d.lang || 'sr-RS'; if (langs.indexOf(l) < 0) langs.push(l); });
+  return langs.map(function (l) {
+    var list = voicesFor(l), name = (TTS_LANGS.find(function (x) { return x[0] === l; }) || [l, l])[1], want = (data.settings.voices || {})[l] || '';
+    if (!list.length) return '<p class="small-note">' + esc(t('{l}: ovaj uređaj nema glas za taj jezik.', { l: t(name) })) + '</p>';
+    return '<div class="field"><label class="label" for="voice-' + l + '">' + esc(t('Glas: {l}', { l: t(name) })) + '</label>' +
+      '<select class="input" id="voice-' + l + '" data-voice="' + l + '"><option value="">' + t('Automatski') + '</option>' +
+      list.map(function (v) { return '<option value="' + esc(v.voiceURI) + '"' + (v.voiceURI === want ? ' selected' : '') + '>' + esc(v.name + ' (' + v.lang + ')') + '</option>'; }).join('') +
+      '</select></div>';
+  }).join('');
+}
 function viewSettings() {
   var s = data.settings;
   return '<div class="screen settings">' +
     '<div class="topbar">' + backBtn('home', t('Nazad')) + '</div>' +
     '<div class="head" style="padding-top:0"><h1>' + t('Podešavanja') + '</h1></div>' +
+    (typeof syncSettingsSection === 'function' ? syncSettingsSection() : '') +
     '<div class="section"><h2>' + t('Izgled') + '</h2>' +
       '<div class="field"><span class="label">' + t('Tema') + '</span>' + themeSeg() + '</div>' +
       '<div class="field"><span class="label">' + t('Font') + '</span>' +
@@ -736,6 +876,21 @@ function viewSettings() {
       seg('setLang', [['sr', 'Latinica'], ['sr-Cyrl', 'Ћирилица'], ['en', 'English']], s.lang) +
       '<p class="small-note">' + t('Jezik menja natpise u aplikaciji. Tvoje kartice i beleške ostaju kako si ih napisao.') + '</p>' +
     '</div>' +
+    '<div class="section"><h2>' + t('Ponavljanje') + '</h2>' +
+      '<div class="field"><span class="label">' + t('Novih kartica dnevno') + '</span>' + numSeg('newPerDay', [[10, '10'], [20, '20'], [30, '30'], [50, '50']]) + '</div>' +
+      '<div class="field"><span class="label">' + t('Najviše ponavljanja dnevno') + '</span>' + numSeg('maxReviews', [[100, '100'], [200, '200'], [500, '500'], [9999, t('Bez granice')]]) + '</div>' +
+      '<div class="field"><span class="label">' + t('Dnevni cilj (odgovora)') + '</span>' + numSeg('goal', [[10, '10'], [30, '30'], [50, '50'], [100, '100']]) + '</div>' +
+      '<div class="field"><span class="label">' + t('Koliko želiš da pamtiš') + '</span>' + numSeg('retention', [[0.85, '85%'], [0.9, '90%'], [0.95, '95%']]) +
+        '<p class="small-note">' + t('Više pamćenja znači češća ponavljanja. 90% je dobar izbor za većinu.') + '</p></div>' +
+    '</div>' +
+    (ttsAvailable() ? '<div class="section"><h2>' + t('Čitanje naglas') + '</h2>' +
+      toggleRow('ttsAuto', t('Čitaj kartice automatski'), t('Pitanje se pročita kad se pojavi, a odgovor kad okreneš karticu. Jezik se bira u izmeni špila.')) +
+      '<div class="field"><span class="label">' + t('Brzina') + '</span>' + numSeg('ttsRate', [[0.8, t('Sporije')], [1, t('Normalno')], [1.2, t('Brže')]]) + '</div>' +
+      voiceFields() +
+      '<button class="btn small" data-act="ttsTest">' + ICON.speaker + ' ' + t('Isprobaj glas') + '</button>' +
+    '</div>' : '') +
+    (typeof remindSection === 'function' ? remindSection() : '') +
+    (typeof aiSettingsSection === 'function' ? aiSettingsSection() : '') +
     '<div class="section"><h2>' + t('Učenje i čitanje') + '</h2>' +
       toggleRow('reduceMotion', t('Smanji animacije'), t('Kartice i stranice se menjaju bez pokreta.')) +
       '<div class="field"><span class="label">' + t('PDF prikaz') + '</span>' +
@@ -747,6 +902,7 @@ function viewSettings() {
       '<button class="btn small" data-act="backupExport">' + t('Napravi rezervnu kopiju') + '</button>' +
       '<button class="btn small" data-act="backupImport">' + t('Vrati iz rezervne kopije') + '</button>' +
       '<input type="file" id="backupFile" accept=".json,application/json" hidden>' +
+      '<div id="upgradeBox"></div>' +
       '<p class="small-note">' + t('Kopija sadrži sve špilove, napredak, beleške, foldere i fajlove. Sačuvaj je u Fajlove ili na računar; tako možeš da preneseš sve na drugi telefon ili pregledač.') + '</p>' +
     '</div>' +
     '<div class="section"><h2>' + t('O aplikaciji') + '</h2>' +
@@ -757,7 +913,7 @@ function viewSettings() {
 
 /* ---------- prikaz ---------- */
 var app = document.getElementById('app');
-var VIEWS = { home: viewHome, deck: viewDeck, cards: viewStudy, done: viewDone, edit: viewEdit, folder: viewFolder,
+var VIEWS = { home: viewHome, deck: viewDeck, cards: viewStudy, done: viewDone, edit: viewEdit, folder: viewFolder, stats: viewStats, aiReview: viewAiReview,
   noteRead: viewNoteRead, noteEdit: viewNoteEdit, docx: viewDocx, pdf: viewPdf, image: viewImage, settings: viewSettings,
   quiz: viewQuiz, quizPlay: viewQuizPlay, quizDone: viewQuizDone, quizEdit: viewQuizEdit };
 
@@ -775,14 +931,17 @@ function applyTheme() {
   if (meta) meta.setAttribute('content', getComputedStyle(b).getPropertyValue('--bg').trim() || '#1C1B1A');
 }
 function render(keepScroll) {
+  if (!data) return;   // podaci se još učitavaju (boot)
   destroyViewer();
   // ekran čiji podaci više ne postoje vraća na početnu
   if ((ui.screen === 'folder' && !folderById(ui.folderId)) ||
       (/^(noteRead|noteEdit|docx|pdf|image)$/.test(ui.screen) && !noteById(ui.noteId)) ||
-      (/^(deck|cards|done|edit)$/.test(ui.screen) && !deck()) ||
+      (/^(deck|edit)$/.test(ui.screen) && !deck()) ||
+      (/^(cards|done)$/.test(ui.screen) && ui.scope !== 'all' && !deck()) ||
       (/^quiz/.test(ui.screen) && !quiz())) ui.screen = 'home';
   if (ui.screen === 'image' && !currentImage()) ui.screen = 'noteEdit';
   if (/^quiz(Play|Done)$/.test(ui.screen) && !ui.qz) ui.screen = 'quiz';
+  if (ui.screen === 'aiReview' && !ui.ai) ui.screen = 'home';
   applyTheme();
   document.body.classList.toggle('has-fs', !!document.fullscreenEnabled);
   document.body.classList.toggle('on-viewer', ui.screen === 'pdf' || ui.screen === 'image');
@@ -802,7 +961,9 @@ function render(keepScroll) {
   if (ui.screen === 'pdf') mountPdf();
   if (ui.screen === 'image') mountImage();
   if (ui.screen === 'docx') mountDocx();
-  if (ui.screen === 'settings') fillStorageInfo();
+  if (ui.screen === 'settings') { fillStorageInfo(); fillUpgradeBox(); }
+  if (ui.screen === 'stats') mountStats();
+  if (app.querySelector('.math')) renderMath(app);
   if (ui.screen === 'cards' || ui.screen === 'edit') loadCardImages();
   if (ui.screen === 'cards') preloadNextCard();
   if ((ui.screen === 'edit' || ui.screen === 'quizEdit') && ui.cardQuery) filterEditList(ui.cardQuery);
@@ -927,40 +1088,98 @@ function deleteDeck(id) {
     save(); if (ui.screen === 'home') render(true);
   });
 }
-function begin(ids) {
-  // učenje obrnuto ima smisla samo za kartice koje imaju odgovor
-  if (data.reverse) {
-    var d = deck();
-    ids = ids.filter(function (id) { var c = cardById(d, id); return c && hasAnswer(c); });
-    if (!ids.length) { toast(t('Nijedna kartica nema odgovor, pa ne može da se uči obrnuto.')); return; }
-  }
-  if (!ids.length) return;
-  ui.order = data.random ? shuffled(ids) : ids.slice();
-  ui.i = 0; ui.flipped = false; ui.dir = 'R'; ui.tick++; ui.screen = 'cards'; ui.hist = [];
+/* Krug učenja. ui.order su ključevi stavki (srs.js), ui.mode je 'free' (slobodno učenje, Znam/Ne znam)
+   ili 'srs' (raspored, ocene 1–4), ui.scope je id špila ili 'all' (Uči danas, svi špilovi). */
+function startSession(keys, mode, scope) {
+  ui.order = keys; ui.mode = mode; ui.scope = scope;
+  ui.i = 0; ui.flipped = false; ui.dir = 'R'; ui.tick++; ui.hist = []; ui.typed = '';
+  ui.sess = { a: 0, ok: 0, ms: 0 }; ui.shownAt = Date.now();
+  ui.screen = 'cards';
   render();
+  autoSpeak();
+}
+// slobodno učenje izabranih kartica jednog špila
+function begin(ids) {
+  var d = deck(), cards = ids.map(function (id) { return cardById(d, id); }).filter(Boolean);
+  // učenje obrnuto ima smisla samo za kartice koje imaju odgovor (praznine se uče kao i uvek)
+  if (data.reverse) {
+    cards = cards.filter(function (c) { return isCloze(c) || hasAnswer(c); });
+    if (!cards.length) { toast(t('Nijedna kartica nema odgovor, pa ne može da se uči obrnuto.')); return; }
+  }
+  if (!cards.length) return;
+  var keys = deckKeys(d, cards);
+  startSession(data.random ? shuffled(keys) : keys, 'free', d.id);
+}
+// ponavljanje po rasporedu: jedan špil ili svi ('all'); bonusNew su nove kartice preko dnevne granice
+function beginSrs(scope, bonusNew) {
+  var now = Date.now(), keys = scope === 'all' ? allDeckKeys() : deckKeys(deck());
+  var q = buildQueue(keys, now, { bonusNew: bonusNew || 0, shuffleNew: !!data.random });
+  if (!q.length) { toast(t('Za danas nema ništa za ponavljanje.')); return; }
+  startSession(q, 'srs', scope);
 }
 function go(next) {
   if (next >= ui.order.length) { ui.screen = 'done'; ui.flipped = false; render(); return; }
   if (next < 0) return;
-  ui.dir = next < ui.i ? 'L' : 'R'; ui.i = next; ui.flipped = false; ui.tick++;
+  ui.dir = next < ui.i ? 'L' : 'R'; ui.i = next; ui.flipped = false; ui.tick++; ui.typed = ''; ui.shownAt = Date.now();
   render();
+  autoSpeak();
 }
+function sessAdd(ok, ms) { var s = ui.sess; if (!s) return; s.a++; if (ok) s.ok++; s.ms += Math.min(ms, 120000); }
+// slobodno učenje: Znam / Ne znam
 function mark(knew) {
-  var d = deck(), id = ui.order[ui.i];
-  ui.hist.push({ i: ui.i, id: id, was: !!d.known[id] });
-  if (knew) d.known[id] = true; else delete d.known[id];
+  var key = ui.order[ui.i], it = itemOf(key);
+  if (!it) { go(ui.i + 1); return; }
+  var ms = Date.now() - (ui.shownAt || Date.now());
+  var stat = statRecord({ key: key, g: 0, st: revState(key), ms: ms, srs: false });
+  ui.hist.push({ i: ui.i, key: key, was: !!it.deck.known[it.card.id], stat: stat, inserted: -1 });
+  if (knew) it.deck.known[it.card.id] = true; else delete it.deck.known[it.card.id];
+  sessAdd(knew, ms);
+  checkBadges();
   save(); go(ui.i + 1);
 }
-// vraća poslednji odgovor: kartica se opet pokaže okrenuta, a "znam/ne znam" se vrati kako je bilo
+// ponavljanje: ocena 1–4 (Ponovo, Teško, Dobro, Lako)
+function rate(g) {
+  var key = ui.order[ui.i], it = itemOf(key);
+  if (!it) { go(ui.i + 1); return; }
+  var now = Date.now(), ms = now - (ui.shownAt || now);
+  var stat = statRecord({ key: key, g: g, st: revState(key), ms: ms, srs: true }, now);
+  var prev = srsRate(key, g, now);
+  var h = { i: ui.i, key: key, prev: prev, was: !!it.deck.known[it.card.id], stat: stat, inserted: -1 };
+  if (g >= RATING.good) it.deck.known[it.card.id] = true; else if (g === RATING.again) delete it.deck.known[it.card.id];
+  // stavka koja je još u učenju vraća se u isti krug posle nekoliko drugih
+  var rv = data.rev[key];
+  if (rv.st !== ST.review && rv.due <= now + LEARN_AHEAD) {
+    h.inserted = Math.min(ui.i + 1 + REQUEUE_GAP, ui.order.length);
+    ui.order.splice(h.inserted, 0, key);
+  }
+  ui.hist.push(h);
+  sessAdd(g >= RATING.hard, ms);
+  checkBadges();
+  save(); go(ui.i + 1);
+}
+// vraća poslednji odgovor: kartica se opet pokaže okrenuta, a napredak i raspored se vrate kako su bili
 function undoMark() {
-  var h = ui.hist.pop(), d = deck();
-  if (!h || !d) return;
-  if (h.was) d.known[h.id] = true; else delete d.known[h.id];
+  var h = ui.hist.pop();
+  if (!h) return;
+  var it = itemOf(h.key);
+  if (it) { if (h.was) it.deck.known[it.card.id] = true; else delete it.deck.known[it.card.id]; }
+  if (ui.mode === 'srs') {
+    if (h.prev) data.rev[h.key] = h.prev; else delete data.rev[h.key];
+    if (h.inserted >= 0) ui.order.splice(h.inserted, 1);
+  }
+  statUndo(h.stat);
+  if (ui.sess && ui.sess.a) ui.sess.a--;
   save();
-  ui.i = h.i; ui.flipped = true; ui.dir = 'L'; ui.tick++; ui.screen = 'cards';
+  ui.i = h.i; ui.flipped = true; ui.dir = 'L'; ui.tick++; ui.screen = 'cards'; ui.shownAt = Date.now();
   render();
 }
-function flip() { ui.flipped = !ui.flipped; render(); }
+function flip() {
+  var inp = document.getElementById('typeAns');
+  if (inp) ui.typed = inp.value;
+  ui.flipped = !ui.flipped;
+  render();
+  if (ui.flipped) autoSpeak();
+}
 
 function parseImport(text) {
   text = text.replace(/\r\n?/g, '\n').trim();
@@ -1006,27 +1225,37 @@ function deleteQuiz(id) {
     save(); if (ui.screen === 'home') render(true);
   });
 }
-function beginQuiz(ids) {
+// srs: krug ponavljanja po rasporedu (red je već složen, ne meša se)
+function beginQuiz(ids, srsMode) {
   var z = quiz(), ok = playable(z).map(function (q) { return q.id; });
   ids = ids.filter(function (id) { return ok.indexOf(id) >= 0; });
   if (!ids.length) return;
-  ui.qz = { order: data.random ? shuffled(ids) : ids, i: 0, picked: null, right: 0, wrong: [] };
+  ui.qz = { order: data.random && !srsMode ? shuffled(ids) : ids, i: 0, picked: null, right: 0, wrong: [], srs: !!srsMode, shownAt: Date.now() };
   ui.tick++; ui.screen = 'quizPlay';
   render();
+}
+function beginQuizSrs() {
+  var z = quiz(), q = buildQueue(quizKeys(z), Date.now(), { shuffleNew: !!data.random });
+  if (!q.length) { toast(t('Za danas nema ništa za ponavljanje.')); return; }
+  beginQuiz(q.map(function (k) { return k.split(':')[2]; }), true);
 }
 // idx je indeks izabranog odgovora; -1 znači "Ne znam"
 function pick(idx) {
   var s = ui.qz; if (!s || s.picked !== null) return;
-  var z = quiz(), q = qById(z, s.order[s.i]);
+  var z = quiz(), q = qById(z, s.order[s.i]), key = 'q:' + z.id + ':' + q.id, now = Date.now(), right = idx === q.correct;
   s.picked = idx;
-  if (idx === q.correct) { s.right++; z.known[q.id] = true; }
+  if (right) { s.right++; z.known[q.id] = true; }
   else { s.wrong.push(q.id); delete z.known[q.id]; }
+  // u ponavljanju: tačno = Dobro, netačno ili "Ne znam" = Ponovo
+  statRecord({ key: key, g: s.srs ? (right ? RATING.good : RATING.again) : 0, st: revState(key), ms: now - (s.shownAt || now), srs: s.srs }, now);
+  if (s.srs) srsRate(key, right ? RATING.good : RATING.again, now);
+  checkBadges();
   save(); render(true);
 }
 function nextQuestion() {
   var s = ui.qz; if (!s || s.picked === null) return;
   if (s.i + 1 >= s.order.length) { ui.screen = 'quizDone'; render(); return; }
-  s.i++; s.picked = null; ui.tick++;
+  s.i++; s.picked = null; ui.tick++; s.shownAt = Date.now();
   render();
 }
 function pickByKey(n) {
@@ -1066,7 +1295,7 @@ function splitArg(v) { var k = v.lastIndexOf(':'); return { q: qById(quiz(), v.s
 /* ---------- beleške, fajlovi i folderi ---------- */
 function openNote(id, from) {
   var x = noteById(id); if (!x) return;
-  ui.noteId = id; ui.from = from === undefined ? (x.folderId || null) : from;
+  ui.noteId = id; ui.from = from === undefined ? (x.folderId || null) : from; ui.notePreview = false;
   ui.screen = isBuiltin(id) ? 'noteRead' : x.type === 'pdf' ? 'pdf' : x.type === 'docx' ? 'docx' : x.type === 'image' ? 'image' : 'noteEdit';
   render();
 }
@@ -2024,6 +2253,7 @@ function pdfMenu() {
       document.fullscreenEnabled ? { label: document.fullscreenElement ? t('Izađi iz celog ekrana') : t('Ceo ekran'), kind: 'plain', onClick: function () { acts.fs(); } } : null,
       { label: t('Preimenuj'), kind: 'plain', onClick: function () { setTimeout(renameNote, 0); } },
       { label: t('Premesti u folder'), kind: 'plain', onClick: function () { setTimeout(moveNote, 0); } },
+      { label: t('✨ Napravi kartice (AI)'), kind: 'plain', onClick: function () { setTimeout(function () { aiStart(x.id); }, 0); } },
       { label: t('Preuzmi PDF'), kind: 'plain', onClick: function () { downloadNote(); } },
       { label: t('Obriši dokument'), kind: 'danger', onClick: function () { setTimeout(askDeleteNote, 0); } },
       { label: t('Zatvori'), kind: 'cancel' }
@@ -2102,6 +2332,7 @@ function imgMenu() {
     { label: t('Ukloni iz beleške'), kind: 'danger', onClick: function () { setTimeout(removeNoteImage, 0); } },
     { label: t('Zatvori'), kind: 'cancel' }
   ] : [
+    { label: t('✨ Napravi kartice (AI)'), kind: 'plain', onClick: function () { setTimeout(function () { aiStart(x.id); }, 0); } },
     { label: t('Preimenuj'), kind: 'plain', onClick: function () { setTimeout(renameNote, 0); } },
     { label: t('Premesti u folder'), kind: 'plain', onClick: function () { setTimeout(moveNote, 0); } },
     { label: t('Preuzmi sliku'), kind: 'plain', onClick: function () { downloadNote(); } },
@@ -2195,16 +2426,19 @@ function cardFromNote() {
     fields: [
       { id: 'q', label: t('Pitanje'), value: parts.q, placeholder: t('Pitanje'), multiline: true, rows: 1 },
       { id: 'a', label: t('Odgovor'), value: parts.a, placeholder: t('Odgovor'), multiline: true, rows: 4 },
+      { id: 'type', label: t('Tip kartice'), value: 'qa', options: [{ value: 'qa', label: t('Pitanje i odgovor') }, { value: 'cloze', label: t('Praznine: u pitanju označi {{reč}}') }] },
       { id: 'deck', label: t('Špil'), value: cur, options: opts }
     ],
     buttons: [{ label: t('Dodaj karticu'), kind: 'primary', onClick: function (v) {
-      var q = v.q.trim(), a = v.a.trim();
+      var q = v.q.trim(), a = v.a.trim(), cloze = v.type === 'cloze';
       if (!q) { var f = document.getElementById('mf-q'); if (f) f.focus(); return false; }
+      if (cloze && !clozeCount(q)) { toast(t('Za praznine stavi bar jednu reč u {{dvostruke zagrade}}.')); var fq = document.getElementById('mf-q'); if (fq) fq.focus(); return false; }
       var d, created = false;
       if (v.deck === NEW) { d = { id: uid(), name: x.title || t('Novi špil'), tag: t('Iz beleški'), cards: [], known: {} }; data.decks.push(d); created = true; }
       else d = data.decks.find(function (dd) { return dd.id === v.deck; });
       if (!d) return false;
       var c = { id: uid(), n: String(nextNo(d.cards) + 1), q: q, a: a };
+      if (cloze) c.type = 'cloze';
       d.cards.push(c); data.cardDeck = d.id; save();
       try { window.getSelection().removeAllRanges(); } catch (e) {}
       noteSel = { text: '', noteId: null, cleared: 0 };
@@ -2263,17 +2497,43 @@ async function backupImport(file) {
     buttons: [{ label: t('Vrati kopiju'), kind: 'danger', onClick: function () {
       (async function () {
         try {
-          await fileClear();
-          var ids = Object.keys(obj.files || {});
+          // prvo se upišu fajlovi iz kopije, pa tek onda brišu stari: prekid na pola ne ostavlja bez fajlova
+          var ids = Object.keys(obj.files || {}), keep = {};
           for (var i = 0; i < ids.length; i++) {
             var f = obj.files[ids[i]];
             await filePut(ids[i], { name: f.name, type: f.type, buf: b64ToBuf(f.b64) });
+            keep[ids[i]] = true;
           }
-          localStorage.setItem(STORE_KEY, JSON.stringify(obj.data));
+          await backupPut('pre-restore', { t: Date.now(), data: JSON.parse(JSON.stringify(data)) });
+          await statePut(obj.data);
+          var old = await fileKeys();
+          for (var k = 0; k < old.length; k++) if (!keep[old[k]]) await fileDel(old[k]);
           location.reload();
         } catch (e) { toast(t('Vraćanje nije uspelo. Nema dovoljno prostora na uređaju.')); }
       })();
     } }, { label: t('Otkaži'), kind: 'cancel' }]
+  });
+}
+// kopija stanja pre nadogradnje na verziju 13 (čuva se 30 dana)
+function fillUpgradeBox() {
+  upgradeBackup().then(function (b) {
+    var box = document.getElementById('upgradeBox');
+    if (!b || !box) return;
+    box.innerHTML = '<button class="btn small" data-act="restoreUpgrade">' + t('Vrati stanje pre nadogradnje ({d})', { d: esc(fmtDate(b.t)) }) + '</button>';
+  });
+}
+function restoreUpgrade() {
+  upgradeBackup().then(function (b) {
+    if (!b) return;
+    modal({
+      title: t('Vratiti stanje pre nadogradnje?'),
+      text: t('Kartice, beleške i napredak vraćaju se na stanje od {d}. Sve što je promenjeno posle toga biće izgubljeno.', { d: fmtDate(b.t) }),
+      buttons: [{ label: t('Vrati stanje'), kind: 'danger', onClick: function () {
+        backupPut('pre-restore', { t: Date.now(), data: JSON.parse(JSON.stringify(data)) })
+          .then(function () { return statePut(b.data); })
+          .then(function () { location.reload(); }, function () { toast(t('Vraćanje nije uspelo.')); });
+      } }, { label: t('Otkaži'), kind: 'cancel' }]
+    });
   });
 }
 function fillStorageInfo() {
@@ -2302,9 +2562,19 @@ var acts = {
   undoMark: undoMark,
   startAll: function () { begin(deck().cards.map(function (c) { return c.id; })); },
   startUnknown: function () { begin(unknownIds(deck())); },
+  // ponavljanje: iz menija špila za taj špil, sa kraja kruga za isti obim kao krug koji je završen
+  startSrs: function () { beginSrs(ui.screen === 'deck' ? ui.deckId : (ui.scope || ui.deckId)); },
+  studyToday: function () { beginSrs('all'); },
+  moreNew: function () { beginSrs(ui.scope || ui.deckId, 10); },
+  rate: function (v) { rate(+v); },
   reset: function () {
-    modal({ title: t('Resetovati napredak?'), text: t('Sve kartice u ovom špilu biće označene kao nenaučene.'),
-      buttons: [{ label: t('Resetuj napredak'), kind: 'danger', onClick: function () { deck().known = {}; save(); render(true); toast(t('Napredak je resetovan')); } },
+    modal({ title: t('Resetovati napredak?'), text: t('Sve kartice u ovom špilu biće označene kao nenaučene, a raspored ponavljanja počinje ispočetka.'),
+      buttons: [{ label: t('Resetuj napredak'), kind: 'danger', onClick: function () {
+        var d = deck(), pre = 'c:' + d.id + ':';
+        d.known = {};
+        Object.keys(data.rev).forEach(function (k) { if (k.indexOf(pre) === 0) delete data.rev[k]; });
+        save(); render(true); toast(t('Napredak je resetovan'));
+      } },
         { label: t('Otkaži'), kind: 'cancel' }] });
   },
   edit: function () { ui.screen = 'edit'; ui.cardQuery = ''; render(); },
@@ -2344,6 +2614,37 @@ var acts = {
     f.dataset.arg = arg; f.click();
   },
   delCardImg: removeCardImage,
+  stats: function () { ui.screen = 'stats'; render(); },
+  notePreview: function () { ui.notePreview = !ui.notePreview; render(true); },
+  // AI asistent (ai.js)
+  aiStart: function (id) { aiStart(id || ui.noteId); },
+  aiFromDeck: function () { aiPickNote({ kind: 'deck', id: ui.deckId }); },
+  aiFromQuiz: function () { aiPickNote({ kind: 'quiz', id: ui.quizId }); },
+  aiAdd: aiAdd,
+  aiMore: function () { var s = ui.ai; if (s) aiRun(s.noteId, s.opts, s.target, { cards: s.cards, questions: s.questions, cost: s.cost }); },
+  aiCancel: function () {
+    var s = ui.ai; ui.ai = null;
+    ui.screen = s && s.back && s.back !== 'aiReview' ? s.back : 'home';
+    render();
+  },
+  aiSaveKey: aiSaveKey, aiCheckKey: aiCheckKey, aiDelKey: aiDelKey,
+  setProvider: function (v) { data.settings.aiProvider = v === 'gemini' ? 'gemini' : 'claude'; save(); render(true); },
+  explain: aiExplain,
+  // nalog i sinhronizacija (sync.js)
+  syncSendCode: syncSendCode, syncVerify: syncVerify, syncSignOut: syncSignOut,
+  syncReset: function () { sync.sent = null; render(true); },
+  remindToggle: function () { if (data.settings.remind) remindOff(); else remindOn(); },
+  syncNow: function () { sync.error = ''; syncNow(); },
+  cardType: function (v) {
+    var k = v.lastIndexOf(':'), c = cardById(deck(), v.slice(0, k)); if (!c) return;
+    if (v.slice(k + 1) === 'cloze') c.type = 'cloze'; else delete c.type;
+    save(); render(true);
+    var el = document.getElementById('q-' + c.id); if (el) el.focus({ preventScroll: true });
+  },
+  // najteže kartice iz statistike, kao slobodno učenje
+  studyHard: function () { if (ui.hardKeys && ui.hardKeys.length) startSession(ui.hardKeys.slice(), 'free', 'all'); },
+  speak: function (side) { speakSide(side); },
+  md: function (kind) { mdApply(kind, document.getElementById(ui.mdTarget)); },
   manage: function () { ui.manage = !ui.manage; render(true); },
   tab: function (v) { data.tab = v; ui.manage = false; save(); render(true); },
   delDeck: function (id) { askDeleteDeck(id || ui.deckId); },
@@ -2361,11 +2662,17 @@ var acts = {
   delQuiz: function (id) { askDeleteQuiz(id || ui.quizId); },
   editQuiz: function () { ui.screen = 'quizEdit'; ui.cardQuery = ''; render(); },
   startQuiz: function () { beginQuiz(playable(quiz()).map(function (q) { return q.id; })); },
+  startQuizSrs: beginQuizSrs,
   startQuizUnknown: function () { var z = quiz(); beginQuiz(playable(z).filter(function (q) { return !z.known[q.id]; }).map(function (q) { return q.id; })); },
   retryWrong: function () { beginQuiz(ui.qz.wrong.slice()); },
   resetQuiz: function () {
     modal({ title: t('Resetovati napredak?'), text: t('Sva pitanja u ovom kvizu biće označena kao nenaučena.'),
-      buttons: [{ label: t('Resetuj napredak'), kind: 'danger', onClick: function () { quiz().known = {}; save(); render(true); toast(t('Napredak je resetovan')); } },
+      buttons: [{ label: t('Resetuj napredak'), kind: 'danger', onClick: function () {
+        var z = quiz(), pre = 'q:' + z.id + ':';
+        z.known = {};
+        Object.keys(data.rev).forEach(function (k) { if (k.indexOf(pre) === 0) delete data.rev[k]; });
+        save(); render(true); toast(t('Napredak je resetovan'));
+      } },
         { label: t('Otkaži'), kind: 'cancel' }] });
   },
   pick: function (v) { pick(parseInt(v, 10)); },
@@ -2495,12 +2802,20 @@ var acts = {
   setSize: function (v) { data.settings.size = v; save(); render(true); },
   setLang: function (v) { data.settings.lang = v; setLang(v); save(); render(true); },
   toggleSetting: function (k) { data.settings[k] = !data.settings[k]; save(); render(true); },
+  setNum: function (v) { var k = v.indexOf(':'); data.settings[v.slice(0, k)] = parseFloat(v.slice(k + 1)); save(); render(true); },
+  ttsTest: function () {
+    var d = data.decks[0], c = d && d.cards[0];
+    speakText(c ? plainText(c.q) : t('Ovako zvuči izabrani glas.'), (d && d.lang) || 'sr-RS');
+  },
+  restoreUpgrade: restoreUpgrade,
   backupExport: backupExport,
   backupImport: function () { var f = document.getElementById('backupFile'); if (f) f.click(); }
 };
 
 /* ---------- događaji ---------- */
 document.addEventListener('click', function (e) {
+  // link u formatiranom tekstu kartice otvara se, a kartica se ne okreće
+  if (e.target.closest('.md a[href]')) return;
   var el = e.target.closest('[data-act]');
   if (!el || el.disabled || el.closest('.modal-back')) return;
   if (swipe.suppressClick) { swipe.suppressClick = false; return; }
@@ -2511,6 +2826,12 @@ document.addEventListener('click', function (e) {
 document.addEventListener('input', function (e) {
   var tg = e.target;
   if (tg.closest('.modal')) { if (tg.tagName === 'TEXTAREA') autosize(tg); return; }
+  if (tg.dataset.ai && ui.ai) {
+    var list = ui.ai.opts.kind === 'quiz' ? ui.ai.questions : ui.ai.cards, item = list[+tg.dataset.i];
+    if (item) item[tg.dataset.ai] = tg.value;
+    if (tg.tagName === 'TEXTAREA') autosize(tg);
+    return;
+  }
   if (tg.id === 'cardSearch') { ui.cardQuery = tg.value; filterEditList(tg.value); return; }
   if (tg.dataset.note) {
     var x = data.notes.find(function (n) { return n.id === ui.noteId; });
@@ -2543,7 +2864,10 @@ document.addEventListener('input', function (e) {
   if (!d) return;
   if (tg.dataset.field) {
     var card = cardById(d, tg.dataset.id);
-    if (card) { card[tg.dataset.field] = tg.value; save(); }
+    if (card) {
+      card[tg.dataset.field] = tg.value; save();
+      if (card.type === 'cloze' && tg.dataset.field === 'q') { var cn = document.getElementById('cn-' + card.id); if (cn) cn.textContent = clozeNote(clozeCount(card.q)); }
+    }
     autosize(tg);
   } else if (tg.dataset.deck) {
     d[tg.dataset.deck] = tg.value; save();
@@ -2594,6 +2918,13 @@ function filterEditList(raw) {
   var info = document.getElementById('cardSearchInfo');
   if (info) { info.hidden = !q; info.textContent = shown ? t('Prikazano {k} od {n}.', { k: shown, n: total }) : t('Ništa ne sadrži taj tekst.'); }
 }
+// traka alata za formatiranje deluje na poslednje polje za pisanje koje je imalo fokus
+document.addEventListener('focusin', function (e) {
+  var tg = e.target;
+  if ((tg.tagName === 'TEXTAREA' || (tg.tagName === 'INPUT' && tg.type !== 'file' && tg.type !== 'search')) && tg.id) ui.mdTarget = tg.id;
+});
+// pritisak na dugme trake ne sme da skloni fokus (i označen tekst) iz polja
+document.addEventListener('mousedown', function (e) { if (e.target.closest('.md-bar button')) e.preventDefault(); });
 // tekst dokumenata počinje da se izvlači čim se klikne u pretragu
 document.addEventListener('focusin', function (e) { if (e.target.id === 'noteSearch') indexDocs().catch(function () {}); });
 document.addEventListener('change', function (e) {
@@ -2612,6 +2943,18 @@ document.addEventListener('change', function (e) {
   } else if (tg.id === 'backupFile' && tg.files.length) {
     var f = tg.files[0]; tg.value = '';
     backupImport(f);
+  } else if (tg.dataset.aiOn !== undefined && ui.ai) {
+    var l2 = ui.ai.opts.kind === 'quiz' ? ui.ai.questions : ui.ai.cards, it2 = l2[+tg.dataset.aiOn];
+    if (it2) { it2.on = tg.checked; render(true); }
+  } else if (tg.id === 'aiDest' && ui.ai) {
+    ui.ai.dest = tg.value;
+  } else if (tg.id === 'remindTime') {
+    remindTime(tg.value);
+  } else if (tg.dataset.setting) {
+    data.settings[tg.dataset.setting] = tg.value; save();
+  } else if (tg.dataset.voice) {
+    data.settings.voices = data.settings.voices || {};
+    data.settings.voices[tg.dataset.voice] = tg.value; save();
   } else if (tg.id === 'pdfRange') {
     pdfGoTo(parseInt(tg.value, 10));
   }
@@ -2633,6 +2976,10 @@ document.addEventListener('keydown', function (e) {
   var tag = (e.target.tagName || '').toLowerCase();
   if (document.querySelector('.modal-back')) return;
   if (tag === 'input' || tag === 'textarea' || tag === 'select') {
+    // kucanje odgovora: Enter okreće karticu; Enter u poljima za prijavu i ključ potvrđuje
+    if (e.target.id === 'typeAns' && e.key === 'Enter') { e.preventDefault(); flip(); return; }
+    var enterAct = { syncEmail: syncSendCode, syncCode: syncVerify, aiKeyInput: aiSaveKey, geminiKeyInput: aiSaveKey }[e.target.id];
+    if (enterAct && e.key === 'Enter') { e.preventDefault(); enterAct(); return; }
     // Esc iz polja: pretraga se prvo isprazni, a sa ekrana za pisanje se izlazi (sve je već sačuvano)
     if (e.key === 'Escape' && !(e.target.type === 'search' && e.target.value) && /^(edit|quizEdit|noteEdit)$/.test(ui.screen)) {
       e.preventDefault(); e.target.blur(); escBack();
@@ -2644,12 +2991,14 @@ document.addEventListener('keydown', function (e) {
     var onButton = e.target.closest && e.target.closest('button');
     if ((e.key === ' ' || e.key === 'Enter') && onButton && !onButton.classList.contains('card')) return;
     if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); flip(); }
-    else if (e.key === 'ArrowLeft') { e.preventDefault(); if (ui.flipped) mark(false); else go(ui.i - 1); }
-    else if (e.key === 'ArrowRight') { e.preventDefault(); if (ui.flipped) mark(true); else flip(); }
-    else if (e.key === '1' && ui.flipped) mark(false);
-    else if (e.key === '2' && ui.flipped) mark(true);
+    var srsMode = ui.mode === 'srs';
+    if (e.key === 'ArrowLeft') { e.preventDefault(); if (ui.flipped) { if (srsMode) rate(RATING.again); else mark(false); } else if (!srsMode) go(ui.i - 1); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); if (ui.flipped) { if (srsMode) rate(RATING.good); else mark(true); } else flip(); }
+    else if (srsMode && ui.flipped && /^[1-4]$/.test(e.key)) rate(+e.key);
+    else if (!srsMode && e.key === '1' && ui.flipped) mark(false);
+    else if (!srsMode && e.key === '2' && ui.flipped) mark(true);
     else if (e.key === 'z' || e.key === 'Z' || e.key === 'Backspace') { e.preventDefault(); undoMark(); }
-    else if (e.key === 'Escape' && !document.fullscreenElement) acts.toDeck();
+    else if (e.key === 'Escape' && !document.fullscreenElement) { if (ui.scope === 'all') acts.home(); else acts.toDeck(); }
   } else if (ui.screen === 'pdf' && (book || pscroll)) {
     var bz = bookZoom();
     if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); pdfPrev(); }
@@ -2674,7 +3023,7 @@ document.addEventListener('keydown', function (e) {
     } else if ((e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowRight') && !(onBtn && e.key !== 'ArrowRight')) {
       e.preventDefault(); nextQuestion();
     }
-  } else if (ui.screen === 'done' && e.key === 'Escape') acts.toDeck();
+  } else if (ui.screen === 'done' && e.key === 'Escape') { if (ui.scope === 'all') acts.home(); else acts.toDeck(); }
   else if (ui.screen === 'done' && (e.key === 'z' || e.key === 'Z' || e.key === 'Backspace')) { e.preventDefault(); undoMark(); }
   else if (ui.screen === 'quizDone' && e.key === 'Escape') acts.toQuiz();
   else if (e.key === 'Escape' && !document.fullscreenElement) escBack();
@@ -2706,9 +3055,9 @@ document.addEventListener('touchend', function () {
   swipe.suppressClick = true;
   setTimeout(function () { swipe.suppressClick = false; }, 350);
   if (Math.abs(dx) > 70) {
-    if (ui.flipped) mark(dx > 0);
+    if (ui.flipped) { if (ui.mode === 'srs') rate(dx > 0 ? RATING.good : RATING.again); else mark(dx > 0); }
     else if (dx < 0) flip();
-    else if (ui.i > 0) go(ui.i - 1);
+    else if (ui.i > 0 && ui.mode !== 'srs') go(ui.i - 1);
     else settle(el);
   } else settle(el);
 });
@@ -2747,8 +3096,7 @@ function checkUpdate() {
 function applyUpdate() {
   if (!pendingUpdate) return;
   if (/^(cards|noteEdit|edit|pdf|docx|image|quizPlay|quizEdit)$/.test(ui.screen) || document.querySelector('.modal-back')) return;
-  saveNow();
-  location.reload();
+  saveNow().then(function () { location.reload(); });
 }
 document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') checkUpdate(); });
 window.addEventListener('pageshow', checkUpdate);
@@ -2757,4 +3105,16 @@ setTimeout(checkUpdate, 1500);
 // privremeni podaci dijagnostike iz verzije 8 više nisu potrebni
 try { localStorage.removeItem('kartice.layout'); } catch (e) {}
 
-render();
+/* Pokretanje: podaci iz IndexedDB (prvi put posle verzije 12 iz localStorage), migracija na novu šemu
+   (sa kopijom starog stanja), pa prvi ekran. */
+async function boot() {
+  var r = await loadData();
+  var migrated = false;
+  try { migrated = await migrateData(r.data); } catch (e) {}
+  data = normalize(r.data);
+  setLang(data.settings.lang);
+  render();
+  if (r.from !== 'idb' || migrated) saveNow();
+  if (typeof syncBoot === 'function') syncBoot();
+}
+boot();

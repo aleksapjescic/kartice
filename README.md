@@ -6,7 +6,12 @@ Adresa: https://aleksapjescic.github.io/kartice/
 
 ## Šta ume
 
-- špilovi kartica sa praćenjem naučenog, učenje po redu ili nasumično, prevlačenje na telefonu
+- **ponavljanje po rasporedu (FSRS)**: ocene Ponovo / Teško / Dobro / Lako, „Uči danas” iz svih špilova, dnevna granica novih kartica i ponavljanja
+- slobodno učenje: sve ili samo nenaučene, po redu ili nasumično, prevlačenje na telefonu, kucanje odgovora
+- **statistika**: dani zaredom, dnevni cilj, kalendar učenja, odgovori po danima, prognoza ponavljanja, najteže kartice, značke
+- **formatiranje** u karticama, kvizovima i beleškama (podebljano, kurziv, označeno, liste, formule), kartice sa prazninama, čitanje naglas
+- **AI asistent** (Claude, tvoj API ključ): kartice i pitanja za kviz iz beleški, PDF-a, Word-a i slika, „Objasni mi” na kartici
+- **nalog i sinhronizacija** (Supabase): ista e-mail adresa na telefonu i računaru, prijava kodom; dnevni podsetnik (vidi `supabase/README.md`)
 - slike uz pitanje i odgovor, učenje obrnuto (odgovor → pitanje), „Poništi” poslednji odgovor, pretraga kartica
 - kvizovi sa ponuđenim odgovorima: unos pitanja ili uvoz iz teksta, praćenje naučenog, ponavljanje netačnih i spisak grešaka
 - beleške: tekstualne, PDF (listanje kao u knjizi ili skrolovanje, zumiranje u oba režima) i Word .docx (u bojama izabrane teme)
@@ -22,15 +27,31 @@ Adresa: https://aleksapjescic.github.io/kartice/
 |---|---|
 | `index.html` | okvir stranice |
 | `styles.css` | izgled |
-| `app.js` | logika aplikacije |
+| `app.js` | ekrani i akcije |
+| `store.js` | čuvanje podataka u IndexedDB i migracija na novu verziju |
+| `srs.js` | raspored ponavljanja (FSRS) i red za danas |
+| `stats.js` | statistika, dani zaredom, značke, ekran Statistika |
+| `markup.js` | formatiranje teksta, formule, praznine, čitanje naglas |
+| `ai.js` | AI asistent (Claude) |
+| `sync.js`, `config.js` | nalog, sinhronizacija i podsetnici (Supabase) |
+| `supabase/` | šema baze, funkcija za podsetnike i uputstvo za podešavanje |
+| `tests/run.js` | testovi bez pregledača: `node tests/run.js` |
 | `i18n.js` | jezici: natpisi, ćirilica, engleski prevod |
 | `data.js` | početni špil i beleške iz materijala |
-| `vendor/` | pdf.js (PDF), mammoth (Word), StPageFlip (listanje stranica) |
+| `vendor/` | pdf.js (PDF), mammoth (Word), StPageFlip (listanje stranica), ts-fsrs (raspored), KaTeX (formule), Anthropic SDK, supabase-js |
 | `sw.js` | rad bez interneta |
 | `version.json` | broj verzije za automatsko ažuriranje |
 | `manifest.json`, ikonice | ime i ikonica na početnom ekranu |
 
-PDF i Word fajlovi čuvaju se u IndexedDB na uređaju, ostalo u localStorage.
+Svi podaci i fajlovi čuvaju se u IndexedDB na uređaju. Do verzije 12 podaci su bili u localStorage; verzija 13 ih pri prvom pokretanju prenese i 30 dana čuva kopiju starog stanja (Podešavanja → Podaci).
+
+`vendor/anthropic.min.js` je zvanični `@anthropic-ai/sdk` spakovan za pregledač:
+
+```bash
+npx esbuild entry.mjs --bundle --format=iife --global-name=AnthropicSDK --platform=browser --target=es2020 --minify
+```
+
+Ulazni fajl `entry.mjs` izvozi `Anthropic` i `jsonSchemaOutputFormat`.
 
 ## Objavljivanje nove verzije
 
@@ -45,4 +66,4 @@ Posle objavljivanja aplikacija na telefonu sama preuzme novu verziju kad se otvo
 ## Instalacija na iPhone
 
 Otvori adresu u **Chromu** (u Safariju iOS 26 ne prikazuje aplikaciju do dna ekrana), pa Share → **Add to Home Screen**.
-Podaci se čuvaju posebno za svaku instaliranu ikonicu; za prenos koristi rezervnu kopiju iz podešavanja.
+Podaci se čuvaju posebno za svaku instaliranu ikonicu. Za prenos koristi nalog (Podešavanja → Nalog i sinhronizacija) ili rezervnu kopiju.
