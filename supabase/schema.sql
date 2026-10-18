@@ -204,14 +204,28 @@ $$;
 revoke all on function public.ai_finish(uuid, bigint, boolean) from public, anon, authenticated;
 grant execute on function public.ai_finish(uuid, bigint, boolean) to service_role;
 
--- Korišćenje aplikacije: koliko puta je otvorena po danu. Upisuje log_open pri pokretanju, čitaju samo admin funkcije.
+-- Korišćenje aplikacije po danu: koliko puta je otvorena (log_open) i koliko je vremena aktivno korišćena
+-- (log_time, ms; meri sync.js dok je aplikacija na ekranu i korisnik nešto radi). Čitaju samo admin funkcije.
 create table if not exists public.app_activity (
   user_id uuid    not null references auth.users (id) on delete cascade,
   day     date    not null,
   opens   integer not null default 0,
+  ms      bigint  not null default 0,
   primary key (user_id, day)
 );
+alter table public.app_activity add column if not exists ms bigint not null default 0;
 alter table public.app_activity enable row level security;
+
+-- jedan poziv donosi najviše 5 minuta, da pogrešan ili zloban klijent ne bi mogao da napuni tuđe brojke
+create or replace function public.log_time(ms integer) returns void
+language sql security definer set search_path = public
+as $$
+  insert into public.app_activity (user_id, day, opens, ms)
+  values (auth.uid(), public.ai_today(), 0, least(greatest(log_time.ms, 0), 300000))
+  on conflict (user_id, day) do update set ms = app_activity.ms + least(greatest(log_time.ms, 0), 300000);
+$$;
+revoke all on function public.log_time(integer) from public, anon;
+grant execute on function public.log_time(integer) to authenticated;
 
 create or replace function public.log_open() returns void
 language sql security definer set search_path = public
@@ -237,7 +251,8 @@ create function public.admin_users()
 returns table (user_id uuid, email text, name text, role text, blocked boolean, daily_limit integer,
                created timestamptz, last_seen timestamptz, today_calls integer, today_tokens bigint,
                month_calls integer, month_tokens bigint,
-               week_answers bigint, week_ms bigint, total_answers bigint, open_days integer, last_open date)
+               week_answers bigint, week_ms bigint, total_answers bigint, open_days integer, last_open date,
+               week_app_ms bigint)
 language plpgsql security definer set search_path = public
 as $$
 #variable_conflict use_column
@@ -248,7 +263,7 @@ begin
   select p.user_id, p.email, p.name, p.role, p.blocked, p.daily_limit, p.created, p.last_seen,
          coalesce(t.calls, 0), coalesce(t.tokens, 0)::bigint, coalesce(m.calls, 0)::integer, coalesce(m.tokens, 0)::bigint,
          coalesce(s.wa, 0)::bigint, coalesce(s.wms, 0)::bigint, coalesce(s.ta, 0)::bigint,
-         coalesce(o.od, 0)::integer, o.lo
+         coalesce(o.od, 0)::integer, o.lo, coalesce(o.wam, 0)::bigint
   from public.profiles p
   left join public.ai_usage t on t.user_id = p.user_id and t.day = d
   left join (select a.user_id, sum(a.calls) as calls, sum(a.tokens) as tokens from public.ai_usage a
@@ -256,7 +271,8 @@ begin
   left join (select sd.user_id, sum(sd.a) filter (where sd.day > d - 7) as wa, sum(sd.ms) filter (where sd.day > d - 7) as wms,
                     sum(sd.a) as ta
              from public.study_days sd group by sd.user_id) s on s.user_id = p.user_id
-  left join (select aa.user_id, count(*) filter (where aa.day > d - 30) as od, max(aa.day) as lo
+  left join (select aa.user_id, count(*) filter (where aa.day > d - 30) as od, max(aa.day) as lo,
+                    sum(aa.ms) filter (where aa.day > d - 7) as wam
              from public.app_activity aa group by aa.user_id) o on o.user_id = p.user_id
   order by p.last_seen desc nulls last, p.created desc;
 end $$;
@@ -278,14 +294,17 @@ begin
     'study', (select jsonb_build_object('a', coalesce(sum(a), 0), 'n', coalesce(sum(n), 0), 'rv', coalesce(sum(rv), 0),
                'ok', coalesce(sum(ok), 0), 'ms', coalesce(sum(ms), 0), 'days', count(*) filter (where a > 0),
                'last', max(day) filter (where a > 0)) from days),
-    'recent', (select coalesce(jsonb_agg(jsonb_build_object('day', g::date, 'a', coalesce(x.a, 0), 'ms', coalesce(x.ms, 0)) order by g), '[]'::jsonb)
-               from generate_series(d - 13, d, interval '1 day') g left join days x on x.day = g::date),
+    'recent', (select coalesce(jsonb_agg(jsonb_build_object('day', g::date, 'a', coalesce(x.a, 0), 'ms', coalesce(x.ms, 0),
+                 'app', coalesce(y.ms, 0)) order by g), '[]'::jsonb)
+               from generate_series(d - 13, d, interval '1 day') g left join days x on x.day = g::date
+               left join public.app_activity y on y.user_id = uid and y.day = g::date),
     'content', (select coalesce(jsonb_object_agg(s.kind, s.c), '{}'::jsonb)
                 from (select i.kind, count(*) as c from public.items i
                       where i.user_id = uid and not i.deleted and i.kind in ('deck', 'card', 'quiz', 'qq', 'note', 'folder', 'known', 'qknown')
                       group by i.kind) s),
     'learned', (select count(*) from public.items i where i.user_id = uid and i.kind = 'rev' and not i.deleted and (i.data->>'st')::int = 2),
-    'opens', (select jsonb_build_object('total', coalesce(sum(aa.opens), 0), 'days30', count(*) filter (where aa.day > d - 30), 'last', max(aa.day))
+    'opens', (select jsonb_build_object('total', coalesce(sum(aa.opens), 0), 'days30', count(*) filter (where aa.day > d - 30), 'last', max(aa.day),
+               'ms', coalesce(sum(aa.ms), 0), 'ms7', coalesce(sum(aa.ms) filter (where aa.day > d - 7), 0))
               from public.app_activity aa where aa.user_id = uid),
     'ai', (select jsonb_build_object('calls', coalesce(sum(u.calls), 0), 'tokens', coalesce(sum(u.tokens), 0))
            from public.ai_usage u where u.user_id = uid)

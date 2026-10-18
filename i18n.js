@@ -772,5 +772,13 @@ var EN = {
   'Šaljem poslednje izmene…': 'Sending the last changes…',
   'Radiš u nalogu: {e}': 'Working in the account of {e}',
   'Izađi': 'Exit',
-  'Administrator aplikacije može da vidi i menja tvoje kartice, kvizove i beleške i da ti pripremi novi materijal.': 'The app administrator can see and edit your cards, quizzes and notes and prepare new material for you.'
+  'Administrator aplikacije može da vidi i menja tvoje kartice, kvizove i beleške i da ti pripremi novi materijal.': 'The app administrator can see and edit your cards, quizzes and notes and prepare new material for you.',
+
+  // vreme u aplikaciji
+  '7 dana: {t} u aplikaciji · {a} odgovora · {d} dana (30 dana)': '7 days: {t} in the app · {a} answers · {d} days (30 days)',
+  'Vreme u aplikaciji po danima, poslednjih 14 dana': 'Time in the app per day, last 14 days',
+  'Vreme odgovaranja na kartice': 'Time answering cards',
+  'Vreme u aplikaciji (7 dana)': 'Time in the app (7 days)',
+  'Vreme u aplikaciji ukupno': 'Total time in the app',
+  'Vreme u aplikaciji se računa dok je otvorena i korisnik nešto radi (uči, čita beleške, pravi kartice). Meri se od verzije 27; za ranije dane postoji samo vreme odgovaranja na kartice.': 'Time in the app counts while it is open and the user is doing something (studying, reading notes, making cards). It is measured from version 27; earlier days only have the time spent answering cards.'
 };

@@ -38,7 +38,7 @@ function adminUserRow(u) {
   var badges = (u.role === 'admin' ? '<span class="badge">' + t('Admin') + '</span>' : '') +
     (u.blocked ? '<span class="badge pdf">' + t('Blokiran') + '</span>' : '') +
     (u.daily_limit != null && u.role !== 'admin' ? '<span class="badge docx">' + t('Svoj limit') + '</span>' : '');
-  var study = t('7 dana: {a} odgovora, {m} · {d} dana u aplikaciji (30 dana)', { a: u.week_answers || 0, m: fmtMinutes(u.week_ms), d: u.open_days || 0 });
+  var study = t('7 dana: {t} u aplikaciji · {a} odgovora · {d} dana (30 dana)', { t: fmtDuration(u.week_app_ms), a: u.week_answers || 0, d: u.open_days || 0 });
   return '<button class="note-item" data-act="adminUser" data-arg="' + esc(u.user_id) + '">' +
     '<span class="note-title">' + esc(u.email || u.name || u.user_id) + '</span>' +
     '<span class="note-preview num">' + esc(study) + '</span>' +
@@ -46,9 +46,20 @@ function adminUserRow(u) {
       '<span>· AI ' + esc(today) + '</span></span>' +
     '</button>';
 }
-function fmtMinutes(ms) {
-  var m = Math.round((+ms || 0) / 60000);
+// trajanje: ispod minuta u sekundama (ranije je 26 s prikazivano kao "0 min")
+function fmtDuration(ms) {
+  ms = +ms || 0;
+  if (ms < 60000) return Math.round(ms / 1000) + ' s';
+  var m = Math.round(ms / 60000);
   return m >= 60 ? Math.floor(m / 60) + ' h ' + (m % 60) + ' min' : m + ' min';
+}
+// stubići za 14 dana; val(r) je vrednost dana, label(r) tekst u opisu
+function miniChart(recent, val, label, aria) {
+  var max = Math.max.apply(null, recent.map(val).concat([1]));
+  return '<div class="mini-chart" role="img" aria-label="' + esc(aria) + '">' + recent.map(function (r) {
+    var v = val(r), h = Math.round(v / max * 100);
+    return '<span title="' + esc(fmtDate(new Date(r.day).getTime()) + ': ' + label(r)) + '"><i style="height:' + Math.max(h, v ? 4 : 0) + '%"></i></span>';
+  }).join('') + '</div>';
 }
 
 /* ---------- detalji jednog korisnika: učenje i korišćenje (samo brojevi, bez sadržaja) ---------- */
@@ -77,11 +88,9 @@ function viewAdminUser() {
   else {
     var st = s.study || {}, c = s.content || {}, o = s.opens || {}, ai = s.ai || {};
     var acc = st.rv ? Math.round(st.ok / st.rv * 100) + '%' : '–';
-    var recent = s.recent || [], max = Math.max.apply(null, recent.map(function (r) { return +r.a || 0; }).concat([1]));
-    var chart = '<div class="mini-chart" role="img" aria-label="' + esc(t('Odgovori po danima, poslednjih 14 dana')) + '">' + recent.map(function (r) {
-      var h = Math.round((+r.a || 0) / max * 100);
-      return '<span title="' + esc(fmtDate(new Date(r.day).getTime()) + ': ' + (r.a || 0)) + '"><i style="height:' + Math.max(h, r.a ? 4 : 0) + '%"></i></span>';
-    }).join('') + '</div>';
+    var recent = s.recent || [];
+    var chart = miniChart(recent, function (r) { return +r.a || 0; }, function (r) { return String(r.a || 0); }, t('Odgovori po danima, poslednjih 14 dana'));
+    var appChart = miniChart(recent, function (r) { return +r.app || 0; }, function (r) { return fmtDuration(r.app); }, t('Vreme u aplikaciji po danima, poslednjih 14 dana'));
     var me = sync.user && sync.user.id === u.user_id;
     body =
       (me ? '' : '<div class="section"><button class="btn primary" data-act="workAs" data-arg="' + esc(u.user_id) + '">' + t('Otvori njegov materijal') + '</button>' +
@@ -90,18 +99,21 @@ function viewAdminUser() {
         statRow(t('Odgovora ukupno'), st.a || 0) +
         statRow(t('Novih kartica naučeno'), st.n || 0) +
         statRow(t('Tačnost u ponavljanju'), acc) +
-        statRow(t('Vreme učenja'), fmtMinutes(st.ms)) +
+        statRow(t('Vreme odgovaranja na kartice'), fmtDuration(st.ms)) +
         statRow(t('Dana sa učenjem'), st.days || 0) +
         statRow(t('Poslednje učenje'), st.last ? fmtDate(new Date(st.last).getTime()) : '–') +
         statRow(t('Kartica u ponavljanju'), s.learned || 0) +
       '</div><span class="label">' + t('Odgovori po danima, poslednjih 14 dana') + '</span>' + chart + '</div>' +
       '<div class="section"><h2>' + t('Korišćenje aplikacije') + '</h2><div class="panel">' +
+        statRow(t('Vreme u aplikaciji (7 dana)'), fmtDuration(o.ms7)) +
+        statRow(t('Vreme u aplikaciji ukupno'), fmtDuration(o.ms)) +
         statRow(t('Otvaranja ukupno'), o.total || 0) +
         statRow(t('Dana u aplikaciji (30 dana)'), o.days30 || 0) +
         statRow(t('Poslednje otvaranje'), o.last ? fmtDate(new Date(o.last).getTime()) : '–') +
         statRow(t('AI poziva ukupno'), ai.calls || 0) +
         statRow(t('AI tokena ukupno'), fmtTokens(ai.tokens)) +
-      '</div></div>' +
+      '</div><span class="label">' + t('Vreme u aplikaciji po danima, poslednjih 14 dana') + '</span>' + appChart +
+      '<p class="small-note">' + t('Vreme u aplikaciji se računa dok je otvorena i korisnik nešto radi (uči, čita beleške, pravi kartice). Meri se od verzije 27; za ranije dane postoji samo vreme odgovaranja na kartice.') + '</p></div>' +
       '<div class="section"><h2>' + t('Sadržaj') + '</h2><div class="panel">' +
         statRow(t('Špilova'), c.deck || 0) + statRow(t('Kartica'), c.card || 0) +
         statRow(t('Kvizova'), c.quiz || 0) + statRow(t('Pitanja u kvizovima'), c.qq || 0) +

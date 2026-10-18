@@ -501,11 +501,45 @@ function syncStoredUser() {
     return s && s.user && s.user.id && s.refresh_token ? s.user : null;
   } catch (e) { return null; }
 }
+/* ---------- vreme u aplikaciji (za admin statistiku) ----------
+   Broji se vreme dok je aplikacija na ekranu i korisnik je nešto radio u poslednja 3 minuta (dodir, klik,
+   taster, skrol), bilo da uči, čita beleške ili pravi kviz. Sabira se svakih 10 s, a na nalog (log_time)
+   šalje jednom u minuti i kad se aplikacija skloni. Ranije se merilo samo vreme odgovaranja na kartice. */
+var appTime = { acc: 0, lastTick: 0, lastAct: 0, started: false };
+var APP_IDLE = 180000;
+function appTimeStart() {
+  if (appTime.started) return;
+  appTime.started = true;
+  appTime.lastTick = appTime.lastAct = Date.now();
+  ['pointerdown', 'keydown', 'wheel', 'touchstart', 'scroll'].forEach(function (ev) {
+    document.addEventListener(ev, function () { appTime.lastAct = Date.now(); }, { passive: true, capture: true });
+  });
+  setInterval(appTimeTick, 10000);
+  setInterval(appTimeFlush, 60000);
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden') { appTimeTick(); appTimeFlush(); }
+    else appTime.lastTick = appTime.lastAct = Date.now();
+  });
+}
+function appTimeTick() {
+  var now = Date.now(), dt = now - appTime.lastTick;
+  appTime.lastTick = now;
+  if (document.visibilityState !== 'visible' || now - appTime.lastAct > APP_IDLE) return;
+  appTime.acc += Math.min(dt, 15000);   // posle uspavanog telefona se ne računa ceo razmak
+}
+function appTimeFlush() {
+  if (!sync.user || appTime.acc < 1000 || !navigator.onLine) return;
+  var ms = Math.round(Math.min(appTime.acc, 300000));
+  appTime.acc -= ms;
+  syncClient().then(function (c) { return c.rpc('log_time', { ms: ms }); })
+    .then(function (r) { if (r && r.error) appTime.acc += ms; }, function () { appTime.acc += ms; });
+}
 // jedno otvaranje aplikacije po učitavanju stranice, za statistiku korišćenja u admin panelu
 function syncLogOpen() {
   if (sync.opened) return;
   sync.opened = true;
   syncClient().then(function (c) { return c.rpc('log_open'); }).catch(function () {});
+  appTimeStart();
 }
 
 /* ---------- obavezna prijava ----------
