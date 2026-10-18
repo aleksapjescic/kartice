@@ -4,7 +4,9 @@
    i kopiju podataka napravljenu pre nadogradnje. */
 
 var STORE_KEY = 'kartice.v1';   // ključ u localStorage iz verzija do 12
-var FILE_DB = 'kartice-files', DB_VERSION = 2;
+// ime baze na ovom uređaju; menja ga dbReset kad stara baza zaglavi (vidi app.js boot)
+var FILE_DB = (function () { try { return localStorage.getItem('kartice.dbName') || 'kartice-files'; } catch (e) { return 'kartice-files'; } })();
+var DB_VERSION = 2;
 var TEXT_KEY = 'text:';         // tekst izvučen iz PDF-a ili Word-a za pretragu čuva se pod 'text:' + fileId
 var STATE_KEY = 'data';
 
@@ -48,6 +50,17 @@ function db() {
     }); });
   }
   return dbPromise;
+}
+/* Brisanje podataka sa ovog uređaja kad baza zaglavi: ne čeka se stara baza (i njeno brisanje ume da
+   zaglavi), nego se prelazi na novu, praznu bazu pod drugim imenom, a stara se briše u pozadini.
+   Prijava (localStorage 'kartice.auth') ostaje, pa sinhronizacija posle ponovnog učitavanja vrati sve sa naloga. */
+function dbReset() {
+  var old = FILE_DB;
+  try {
+    localStorage.setItem('kartice.dbName', 'kartice-files-' + Date.now().toString(36));
+    localStorage.removeItem(STORE_KEY);
+  } catch (e) {}
+  try { indexedDB.deleteDatabase(old); } catch (e) {}
 }
 // glavni podaci sa vremenskim ograničenjem: ako baza ne odgovori, otvara se ponovo (jednom), a ne učitava se prazno
 function stateGetPatient(ms) {

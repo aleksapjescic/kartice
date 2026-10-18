@@ -3,7 +3,7 @@
    Pri svakom objavljivanju: povećati APP_VERSION, isti broj upisati u version.json
    i u ?v= parametre u index.html. */
 
-var APP_VERSION = 19;
+var APP_VERSION = 20;
 
 /* ---------- pomoćne funkcije ---------- */
 function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
@@ -3129,9 +3129,20 @@ async function boot() {
   var r = await loadData();
   // baza na uređaju ne odgovara (iPhone): ne učitava se prazno preko tvojih podataka, nego se nudi ponovni pokušaj
   if (r.from === 'stuck') {
+    var onAccount = typeof syncStoredUser === 'function' && !!syncStoredUser();
     app.innerHTML = '<div class="screen login-gate"><div class="head login-head"><span class="eyebrow">' + t('Učenje kartica') + '</span><h1>' + t('Kartice') + '</h1></div>' +
       '<p class="sub">' + t('Podaci na uređaju se sporo otvaraju. Pokušaj ponovo; ako ne pomogne, zatvori aplikaciju i otvori je opet.') + '</p>' +
-      '<button class="btn primary" onclick="location.reload()">' + t('Pokušaj ponovo') + '</button></div>';
+      '<div class="stack"><button class="btn primary" id="bootRetry">' + t('Pokušaj ponovo') + '</button>' +
+      '<button class="btn" id="bootReset">' + (onAccount ? t('Obriši podatke sa ovog uređaja i preuzmi ih sa naloga') : t('Obriši podatke sa ovog uređaja')) + '</button></div>' +
+      '<p class="small-note">' + (onAccount
+        ? t('Sve što je sinhronizovano sa nalogom vratiće se samo. Izgubiće se samo izmene na ovom uređaju koje još nisu stigle na nalog.')
+        : t('Nisi prijavljen, pa će se podaci sa ovog uređaja trajno obrisati.')) + '</p></div>';
+    document.getElementById('bootRetry').onclick = function () { location.reload(); };
+    document.getElementById('bootReset').onclick = function () {
+      modal({ title: t('Obrisati podatke sa ovog uređaja?'),
+        text: onAccount ? t('Posle toga se sve preuzima sa naloga. Prijava ostaje.') : t('Ovo ne može da se vrati.'),
+        buttons: [{ label: t('Obriši'), kind: 'danger', onClick: function () { dbReset(); location.reload(); } }, { label: t('Otkaži'), kind: 'cancel' }] });
+    };
     return;
   }
   var migrated = false;

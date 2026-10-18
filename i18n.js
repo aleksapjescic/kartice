@@ -753,5 +753,12 @@ var EN = {
   'Beleški': 'Notes',
   'Vidiš samo brojeve, ne i sadržaj kartica i beleški. Učenje se računa iz podataka koje je aplikacija sinhronizovala.': 'You see only numbers, not the content of cards and notes. Study is counted from data the app has synced.',
   'Podaci na uređaju se sporo otvaraju. Pokušaj ponovo; ako ne pomogne, zatvori aplikaciju i otvori je opet.': 'The data on this device is slow to open. Try again; if that doesn’t help, close the app and open it again.',
-  'Pokušaj ponovo': 'Try again'
+  'Pokušaj ponovo': 'Try again',
+  'Obriši podatke sa ovog uređaja i preuzmi ih sa naloga': 'Delete data on this device and download it from your account',
+  'Obriši podatke sa ovog uređaja': 'Delete data on this device',
+  'Sve što je sinhronizovano sa nalogom vratiće se samo. Izgubiće se samo izmene na ovom uređaju koje još nisu stigle na nalog.': 'Everything synced to your account comes back by itself. Only changes on this device that haven’t reached your account yet are lost.',
+  'Nisi prijavljen, pa će se podaci sa ovog uređaja trajno obrisati.': 'You are not signed in, so the data on this device will be deleted permanently.',
+  'Obrisati podatke sa ovog uređaja?': 'Delete data on this device?',
+  'Posle toga se sve preuzima sa naloga. Prijava ostaje.': 'After that everything is downloaded from your account. You stay signed in.',
+  'Ovo ne može da se vrati.': 'This can’t be undone.'
 };
