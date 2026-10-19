@@ -129,7 +129,13 @@ async function geminiCall(o) {
   var body = { contents: [{ role: 'user', parts: o.parts }], generationConfig: { maxOutputTokens: o.maxTokens || 32768 } };
   if (o.system) body.systemInstruction = { parts: [{ text: o.system }] };
   if (o.json) { body.generationConfig.responseMimeType = 'application/json'; body.generationConfig.responseSchema = GEMINI_SCHEMA; }
-  var j = await geminiFetch('models/' + encodeURIComponent(geminiModel()) + ':generateContent', body);
+  if (o.thinking) body.generationConfig.thinkingConfig = { thinkingLevel: o.thinking };
+  var path = 'models/' + encodeURIComponent(geminiModel()) + ':generateContent', j;
+  try { j = await geminiFetch(path, body); } catch (e) {
+    if (!(o.thinking && e && e.status === 400 && /thinking/i.test(e.message || ''))) throw e;
+    delete body.generationConfig.thinkingConfig;
+    j = await geminiFetch(path, body);
+  }
   var u = j.usageMetadata || {}, tokens = (u.promptTokenCount || 0) + (u.candidatesTokenCount || 0) + (u.thoughtsTokenCount || 0);
   aiUsageAdd(0, tokens);
   if (j.promptFeedback && j.promptFeedback.blockReason) throw { refusal: true };
@@ -471,9 +477,12 @@ function explainHtml() {
   if (!x || x.key !== explainKey()) return '';
   if (x.err) return '<div class="explain" id="explainBox"><span class="label">' + esc(x.err) + '</span></div>';
   return '<div class="explain" id="explainBox"><span class="label">' + ICON.spark + ' ' +
-    (x.busy ? t('{ai} objašnjava…', { ai: aiName() }) : t('Objašnjenje')) + '</span>' +
+    (x.busy ? t('{ai} objašnjava…', { ai: aiName() }) + ' <span class="num" id="explainSec">' + explainSec(x) + '</span>' : t('Objašnjenje')) + '</span>' +
     '<div class="md">' + (x.text ? renderMarkup(x.text) : '') + '</div></div>';
 }
+// koliko se već čeka; prikazuje se posle 3 s, da se vidi da AI radi i kad je spor
+function explainSec(x) { var n = Math.round((Date.now() - x.started) / 1000); return n >= 3 ? n + ' s' : ''; }
+var EXPLAIN_WAIT = 120000;   // posle toliko se čekanje prekida porukom
 // osveži samo okvir sa objašnjenjem (ako je ta kartica ili pitanje još na ekranu)
 function explainPaint(x, scroll) {
   if (ui.explain !== x || x.key !== explainKey()) return;
@@ -512,12 +521,21 @@ async function aiExplain() {
   var key = explainKey(); if (!key) return;
   if (ui.explain && ui.explain.key === key && (ui.explain.busy || ui.explain.text)) { explainPaint(ui.explain, true); return; }
   var pr = explainPrompt(); if (!pr) return;
-  var x = ui.explain = { key: key, busy: true, text: '', err: '' };
+  var x = ui.explain = { key: key, busy: true, text: '', err: '', started: Date.now() };
   explainPaint(x, true);
+  var tick = setInterval(function () {
+    var el = document.getElementById('explainSec');
+    if (el && ui.explain === x && x.busy) el.textContent = explainSec(x);
+  }, 1000);
+  var timer;
   try {
     if (aiProvider() === 'gemini') {
-      // Gemini razmišlja pre odgovora i to troši isti limit tokena, pa je limit velik, a prekinut odgovor se ipak prikaže
-      var g = await geminiCall({ system: pr.system, parts: [{ text: pr.ask }], maxTokens: 16384, partial: true });
+      // kratko razmišljanje (brži odgovor); razmišljanje troši isti limit tokena, pa je limit velik,
+      // a prekinut odgovor se ipak prikaže
+      var g = await Promise.race([
+        geminiCall({ system: pr.system, parts: [{ text: pr.ask }], maxTokens: 16384, partial: true, thinking: 'low' }),
+        new Promise(function (res, rej) { timer = setTimeout(function () { rej({ slow: true }); }, EXPLAIN_WAIT); })
+      ]);
       if (!g.text.trim()) throw { refusal: true };
       x.text = g.text;
     } else {
@@ -532,8 +550,9 @@ async function aiExplain() {
       if (msg.stop_reason === 'refusal') throw { refusal: true };
     }
   } catch (e) {
-    x.err = aiErrorText(e);
+    x.err = e && e.slow ? t('{ai} se predugo ne javlja. Pritisni Objasni mi ponovo za par minuta.', { ai: aiName() }) : aiErrorText(e);
   }
+  clearInterval(tick); clearTimeout(timer);
   x.busy = false;
   explainPaint(x, true);
 }

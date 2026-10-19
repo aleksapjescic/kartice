@@ -563,6 +563,7 @@ var EN = {
   'Spoji': 'Merge',
   'Zameni podacima sa naloga': 'Replace with the account’s data',
   'Prijavljen si. Sinhronizujem…': 'Signed in. Syncing…',
+  '{ai} se predugo ne javlja. Pritisni Objasni mi ponovo za par minuta.': '{ai} is taking too long. Tap Explain again in a few minutes.',
   'Upiši ispravnu e-mail adresu.': 'Enter a valid email address.',
   'Lozinka mora da ima bar 6 znakova.': 'The password must have at least 6 characters.',
   'Pogrešan mejl ili lozinka. Ako si se ranije prijavljivao Google-om, prvo postavi lozinku u Podešavanjima na uređaju gde si prijavljen.': 'Wrong email or password. If you used to sign in with Google, first set a password in Settings on a device where you are signed in.',
