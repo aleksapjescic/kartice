@@ -689,7 +689,7 @@ details.free .body { display: flex; flex-direction: column; gap: 12px; padding-b
   .home { max-width: 880px; }
   .decks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .deck-wide { max-width: 960px; }
-  .deck-menu { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 48px; align-items: end; align-content: center; padding-bottom: 48px; }
+  .deck-menu { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 48px; align-items: center; align-content: center; padding-bottom: 48px; }
   .deck-menu .head h1 { font-size: 56px; letter-spacing: -1.6px; }
   .study { padding-block: 48px 28px; }
   .card.front { padding: 40px 44px; }
