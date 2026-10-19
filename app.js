@@ -3,7 +3,7 @@
    Pri svakom objavljivanju: povećati APP_VERSION, isti broj upisati u version.json
    i u ?v= parametre u index.html. */
 
-var APP_VERSION = 30;
+var APP_VERSION = 31;
 
 /* ---------- pomoćne funkcije ---------- */
 function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
@@ -2696,7 +2696,7 @@ var acts = {
   exitAs: function () { syncExitAs(); },
   explain: aiExplain,
   // nalog i sinhronizacija (sync.js)
-  syncSignOut: syncSignOut, syncSignIn: syncSignIn, syncSignUp: syncSignUp, syncSetPassword: syncSetPassword,
+  syncSignOut: syncSignOut, syncGoogle: syncGoogle, syncSignIn: syncSignIn, syncSignUp: syncSignUp, syncSetPassword: syncSetPassword,
   remindToggle: function () { if (data.settings.remind) remindOff(); else remindOn(); },
   syncNow: function () { sync.error = ''; syncNow(); },
   cardType: function (v) {

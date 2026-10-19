@@ -834,6 +834,9 @@ details.free .body { display: flex; flex-direction: column; gap: 12px; padding-b
 }
 
 /* ekran za prijavu (obavezna prijava, sync.js) */
+.google-btn { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.google-btn .g-logo { flex: none; }
+.login-or { text-align: center; margin: 2px 0 -2px; }
 .login-gate { max-width: 440px; justify-content: center; }
 .login-gate .login-head h1 { font-size: 44px; }
 .login-gate .small-note a { color: var(--muted); }

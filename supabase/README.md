@@ -1,6 +1,6 @@
 # Kartice — podešavanje naloga i sinhronizacije (Supabase)
 
-Bez ovoga aplikacija radi kao i ranije, samo na uređaju. Sa ovim se isti nalog (mejl i lozinka) prijavljuje na telefonu i računaru, i sve se sinhronizuje samo.
+Bez ovoga aplikacija radi kao i ranije, samo na uređaju. Sa ovim se isti nalog (Google ili mejl i lozinka) prijavljuje na telefonu i računaru, i sve se sinhronizuje samo.
 
 ## 1. Projekat (jednom)
 
@@ -11,7 +11,7 @@ Bez ovoga aplikacija radi kao i ranije, samo na uređaju. Sa ovim se isti nalog 
    - privatni bucket `files`;
    - tabelu `push_subs` za podsetnike;
    - profile, potrošnju AI-ja i podešavanja za admin panel (`profiles`, `ai_usage`, `app_config`).
-3. **Authentication → Sign In / Providers**: **Email** uključen, a **Confirm email** isključen, da nalog radi odmah, bez poruke na mejl. Google prijava (odeljak 2) više nije u aplikaciji; nalozi napravljeni preko Google-a u Podešavanjima postave lozinku.
+3. **Authentication → Sign In / Providers**: **Email** uključen, a **Confirm email** isključen, da nalog radi odmah, bez poruke na mejl. Pored toga radi i Google prijava (odeljak 2).
 4. **Settings → API**: kopiraj *Project URL* i *anon public* ključ u `config.js` (`SUPABASE_URL`, `SUPABASE_ANON_KEY`). Oba su javna: pristup podacima štite pravila iz `schema.sql`.
 
 Ograničenja besplatnog plana:
