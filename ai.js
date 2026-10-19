@@ -136,8 +136,9 @@ async function geminiCall(o) {
   var c = j.candidates && j.candidates[0];
   if (!c) throw { refusal: true };
   if (/SAFETY|PROHIBITED|RECITATION|BLOCKLIST|SPII/.test(c.finishReason || '')) throw { refusal: true };
-  if (c.finishReason === 'MAX_TOKENS') throw { tooLong: true };
   var text = ((c.content && c.content.parts) || []).filter(function (p) { return p.text && !p.thought; }).map(function (p) { return p.text; }).join('');
+  // partial: prekinut odgovor se prihvata (objašnjenje), inače je greška (JSON ne bi bio ceo)
+  if (c.finishReason === 'MAX_TOKENS' && !(o.partial && text.trim())) throw { tooLong: true };
   return { text: text, tokens: tokens };
 }
 function aiModel() { return AI_MODELS.find(function (m) { return m.id === data.settings.aiModel; }) || AI_MODELS[0]; }
@@ -332,7 +333,7 @@ function aiClean(out, o, cost, tokens) {
 function aiNeedKey() {
   if (aiKeySource() === 'app') {
     modal({ title: t('Prijavi se za AI'), text: t('AI radi bez tvog ključa kad si prijavljen. Može i sa tvojim ključem, u Podešavanja → AI asistent.'),
-      buttons: [{ label: t('Prijavi se sa Google-om'), kind: 'primary', onClick: function () { syncGoogle(); } },
+      buttons: [{ label: t('Prijavi se'), kind: 'primary', onClick: function () { ui.screen = 'settings'; render(); setTimeout(function () { var el = document.getElementById('syncEmail'); if (el) { el.scrollIntoView({ block: 'center' }); el.focus(); } }, 50); } },
         { label: t('Upiši svoj ključ'), kind: 'plain', onClick: function () { aiSetSource('own'); ui.screen = 'settings'; render(); setTimeout(function () { var el = document.getElementById('aiSourceSeg'); if (el) el.scrollIntoView({ block: 'center' }); }, 50); } },
         { label: t('Otkaži'), kind: 'cancel' }] });
     return;
@@ -458,46 +459,83 @@ function aiAdd() {
   }
 }
 
-/* ---------- Objasni mi (na poleđini kartice) ---------- */
-var aiExplainBusy = false;
+/* ---------- Objasni mi (poleđina kartice i odgovoreno pitanje u kvizu) ----------
+   Objašnjenje se čuva u ui.explain (po kartici ili pitanju), pa ostaje i kad se ekran ponovo iscrta;
+   dok stiže, menja se samo okvir, da se kartica ne okreće ponovo. */
+function explainKey() {
+  if (ui.screen === 'quizPlay' && ui.qz) { var z = quiz(); return z ? 'q:' + z.id + ':' + ui.qz.order[ui.qz.i] : ''; }
+  return ui.screen === 'cards' ? 'c:' + ui.order[ui.i] : '';
+}
+function explainHtml() {
+  var x = ui.explain;
+  if (!x || x.key !== explainKey()) return '';
+  if (x.err) return '<div class="explain" id="explainBox"><span class="label">' + esc(x.err) + '</span></div>';
+  return '<div class="explain" id="explainBox"><span class="label">' + ICON.spark + ' ' +
+    (x.busy ? t('{ai} objašnjava…', { ai: aiName() }) : t('Objašnjenje')) + '</span>' +
+    '<div class="md">' + (x.text ? renderMarkup(x.text) : '') + '</div></div>';
+}
+// osveži samo okvir sa objašnjenjem (ako je ta kartica ili pitanje još na ekranu)
+function explainPaint(x, scroll) {
+  if (ui.explain !== x || x.key !== explainKey()) return;
+  var html = explainHtml(), box = document.getElementById('explainBox');
+  if (!box) {
+    var host = document.querySelector(ui.screen === 'quizPlay' ? '.quiz-body' : '.answer-scroll'); if (!host) return;
+    host.insertAdjacentHTML('beforeend', html);
+    box = document.getElementById('explainBox');
+  } else {
+    box.outerHTML = html;
+    box = document.getElementById('explainBox');
+  }
+  if (!box) return;
+  if (!x.busy && box.querySelector('.math')) renderMath(box);
+  if (scroll) box.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+function explainPrompt() {
+  var system = 'Objašnjavaš učeniku odgovor, jednostavno i tačno, na istom jeziku i pismu kao pitanje. Najviše 5 kratkih rečenica, po potrebi primer. Formatiranje: **podebljano**, liste sa "- ", formule $...$. Bez uvoda i bez ponavljanja pitanja.';
+  if (ui.screen === 'quizPlay') {
+    var z = quiz(), s = ui.qz, q = qById(z, s.order[s.i]);
+    var opts = optionList(q), right = opts.find(function (o) { return o.i === q.correct; }), mine = opts.find(function (o) { return o.i === s.picked; });
+    var list = opts.map(function (o, k) { return LETTERS[k] + ') ' + plainText(o.t); }).join('\n');
+    var ask = 'Pitanje iz kviza: ' + plainText(q.q) + '\nPonuđeni odgovori:\n' + list +
+      '\nTačan odgovor: ' + (right ? plainText(right.t) : '') +
+      (mine && mine !== right ? '\nUčenik je izabrao: ' + plainText(mine.t) + '\n\nObjasni zašto je tačan odgovor tačan i zašto izabrani nije.' : '\n\nObjasni zašto je to tačan odgovor.');
+    return { system: system, ask: ask };
+  }
+  var it = itemOf(ui.order[ui.i]); if (!it) return null;
+  var sd = studySides(it);
+  var cq = sd.cloze ? plainText(clozeText(it.card.q, it.n, false)) : plainText(it.card.q);
+  var ca = sd.cloze ? plainText(clozeText(it.card.q, it.n, true)) + (it.card.a ? '\n' + plainText(it.card.a) : '') : plainText(it.card.a || '');
+  return { system: system, ask: 'Pitanje: ' + cq + '\nOdgovor sa kartice: ' + (ca || '(nema tekstualnog odgovora)') + '\n\nObjasni zašto je to tako.' };
+}
 async function aiExplain() {
   if (!aiReady()) { aiNeedKey(); return; }
-  var it = itemOf(ui.order[ui.i]); if (!it || aiExplainBusy) return;
-  var sd = studySides(it), box = document.getElementById('explainBox');
-  if (!box) {
-    box = document.createElement('div'); box.id = 'explainBox'; box.className = 'explain';
-    var host = document.querySelector('.answer-scroll'); if (!host) return;
-    host.appendChild(box);
-  }
-  box.innerHTML = '<span class="label">' + ICON.spark + ' ' + t('{ai} objašnjava…', { ai: aiName() }) + '</span><div class="md"></div>';
-  var out = box.querySelector('.md'), acc = '', key = ui.order[ui.i];
-  aiExplainBusy = true;
+  var key = explainKey(); if (!key) return;
+  if (ui.explain && ui.explain.key === key && (ui.explain.busy || ui.explain.text)) { explainPaint(ui.explain, true); return; }
+  var pr = explainPrompt(); if (!pr) return;
+  var x = ui.explain = { key: key, busy: true, text: '', err: '' };
+  explainPaint(x, true);
   try {
-    var q = sd.cloze ? plainText(clozeText(it.card.q, it.n, false)) : plainText(it.card.q);
-    var a = sd.cloze ? plainText(clozeText(it.card.q, it.n, true)) + (it.card.a ? '\n' + plainText(it.card.a) : '') : plainText(it.card.a || '');
-    var system = 'Objašnjavaš učeniku odgovor sa kartice za učenje, jednostavno i tačno, na istom jeziku i pismu kao kartica. Najviše 5 kratkih rečenica, po potrebi primer. Formatiranje: **podebljano**, liste sa "- ", formule $...$. Bez uvoda i bez ponavljanja pitanja.';
-    var ask = 'Pitanje: ' + q + '\nOdgovor sa kartice: ' + (a || '(nema tekstualnog odgovora)') + '\n\nObjasni zašto je to tako.';
     if (aiProvider() === 'gemini') {
-      var g = await geminiCall({ system: system, parts: [{ text: ask }], maxTokens: 4096 });
-      if (out.isConnected) { box.querySelector('.label').innerHTML = ICON.spark + ' ' + t('Objašnjenje'); out.innerHTML = renderMarkup(g.text); renderMath(box); }
-      return;
+      // Gemini razmišlja pre odgovora i to troši isti limit tokena, pa je limit velik, a prekinut odgovor se ipak prikaže
+      var g = await geminiCall({ system: pr.system, parts: [{ text: pr.ask }], maxTokens: 16384, partial: true });
+      if (!g.text.trim()) throw { refusal: true };
+      x.text = g.text;
+    } else {
+      var m = aiModel(), client = await aiClient();
+      var params = { model: m.id, max_tokens: 2000, output_config: { effort: 'low' }, system: pr.system, messages: [{ role: 'user', content: pr.ask }] };
+      var stream;
+      if (m.fallback) { params.betas = ['server-side-fallback-2026-07-01']; params.fallbacks = 'default'; stream = client.beta.messages.stream(params); }
+      else stream = client.messages.stream(params);
+      stream.on('text', function (d) { x.text += d; explainPaint(x); });
+      var msg = await stream.finalMessage();
+      aiUsageAdd(aiCost(msg.usage, m));
+      if (msg.stop_reason === 'refusal') throw { refusal: true };
     }
-    var m = aiModel(), client = await aiClient();
-    var params = { model: m.id, max_tokens: 2000, output_config: { effort: 'low' }, system: system, messages: [{ role: 'user', content: ask }] };
-    var stream;
-    if (m.fallback) { params.betas = ['server-side-fallback-2026-07-01']; params.fallbacks = 'default'; stream = client.beta.messages.stream(params); }
-    else stream = client.messages.stream(params);
-    stream.on('text', function (d) {
-      acc += d;
-      if (ui.order[ui.i] === key && out.isConnected) { out.innerHTML = renderMarkup(acc); }
-    });
-    var msg = await stream.finalMessage();
-    aiUsageAdd(aiCost(msg.usage, m));
-    if (msg.stop_reason === 'refusal') throw { refusal: true };
-    if (out.isConnected) { box.querySelector('.label').innerHTML = ICON.spark + ' ' + t('Objašnjenje'); out.innerHTML = renderMarkup(acc); renderMath(box); }
   } catch (e) {
-    if (box.isConnected) box.innerHTML = '<span class="label">' + esc(aiErrorText(e)) + '</span>';
-  } finally { aiExplainBusy = false; }
+    x.err = aiErrorText(e);
+  }
+  x.busy = false;
+  explainPaint(x, true);
 }
 
 /* ---------- podešavanja ---------- */
@@ -513,8 +551,7 @@ function aiSettingsSection() {
 function appAiSettings() {
   var note = '<p class="small-note">' + t('AI pravi kartice i pitanja iz tvojih beleški i objašnjava odgovore, bez tvog ključa (Gemini preko servera aplikacije). Google sme da koristi poslat materijal za unapređenje svojih modela, pa ne šalji ništa privatno.') + '</p>';
   if (!sync.user) {
-    return note + '<p class="small-note">' + t('Za ovo se prijavi na nalog, gore u odeljku Nalog i sinhronizacija.') + '</p>' +
-      '<button class="btn small google-btn" data-act="syncGoogle">' + ICON_GOOGLE + t('Prijavi se sa Google-om') + '</button>';
+    return note + '<p class="small-note">' + t('Za ovo se prijavi na nalog, gore u odeljku Nalog i sinhronizacija.') + '</p>';
   }
   var a = sync.ai, line;
   if (!a) line = t('Učitavam stanje naloga…');

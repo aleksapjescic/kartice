@@ -3,7 +3,7 @@
    AI preko ključa aplikacije, menja dnevni limit i model, i upravlja korisnicima (limit, blokada, admin prava).
    Sve izmene idu preko funkcija u bazi koje same proveravaju da je pozivalac admin; aplikacija samo prikazuje. */
 
-var adm = { users: null, cfg: null, err: '', loading: false, q: '' };
+var adm = { users: null, cfg: null, err: '', loading: false, q: '', models: null, modelsErr: '' };
 
 async function adminLoad() {
   if (adm.loading) return;
@@ -17,7 +17,16 @@ async function adminLoad() {
   adm.loading = false;
   if (/^admin(User)?$/.test(ui.screen)) render(true);
 }
-function adminOpen() { ui.screen = 'admin'; adm.users = null; adm.err = ''; render(); adminLoad(); }
+function adminOpen() { ui.screen = 'admin'; adm.users = null; adm.err = ''; render(); adminLoad(); adminLoadModels(); }
+// spisak Gemini modela sa servera (funkcija ai, tvojim ključem), za padajući meni
+async function adminLoadModels() {
+  adm.modelsErr = '';
+  try {
+    var j = await appAiFetch({ listModels: true });
+    adm.models = (j && j.models || []).sort(function (a, b) { return geminiRank(b.id) - geminiRank(a.id); });
+  } catch (e) { adm.models = null; adm.modelsErr = aiErrorText(e); }
+  if (ui.screen === 'admin') render(true);
+}
 
 async function adminCall(fn, args, done) {
   try {
@@ -153,8 +162,7 @@ function viewAdmin() {
           '<small>' + t('Kad je isključeno, AI radi samo onima koji upišu svoj ključ.') + '</small></span><span class="switch" aria-hidden="true"></span></button>' +
         '<button class="toggle-row" data-act="adminDefLimit"><span>' + t('Dnevni limit po korisniku') +
           '<small>' + t('Broj AI poziva dnevno. Administratori nemaju limit, a pojedinačnim korisnicima možeš da zadaš drugačiji.') + '</small></span><b class="num">' + cfg.default_daily_limit + '</b></button>' +
-        '<button class="toggle-row" data-act="adminModel"><span>' + t('Model') +
-          '<small>' + t('Gemini model koji koriste svi koji nemaju svoj ključ.') + '</small></span><b>' + esc(cfg.model) + '</b></button>' +
+        adminModelField(cfg.model) +
         '<p class="small-note num">' + t('Danas ukupno: {c} poziva, {k} tokena. Ovog meseca: {m} poziva.', { c: todayCalls, k: fmtTokens(todayTok), m: monthCalls }) + '</p>' +
       '</div>' +
       '<div class="section"><h2>' + t('Korisnici ({n})', { n: us.length }) + '</h2>' +
@@ -173,6 +181,22 @@ function adminDefLimit() {
       v = (v || '').trim(); if (!/^\d{1,5}$/.test(v)) { toast(t('Upiši ceo broj.')); return false; }
       adminConfig({ default_daily_limit: +v });
     } }, { label: t('Otkaži'), kind: 'cancel' }] });
+}
+// padajući meni: modeli sa servera, uvek i trenutni, i "Drugi model…" za ručni unos
+function adminModelField(cur) {
+  var list = (adm.models || []).slice();
+  if (!list.some(function (m) { return m.id === cur; })) list.unshift({ id: cur, name: cur });
+  var note = adm.models ? t('Gemini model koji koriste svi koji nemaju svoj ključ.')
+    : adm.modelsErr ? t('Spisak modela nije učitan: {m}', { m: adm.modelsErr }) : t('Učitavam spisak modela…');
+  return '<div class="field"><label class="label" for="adminModelSel">' + t('Model za korisnike') + '</label>' +
+    '<select class="input" id="adminModelSel">' + list.map(function (m) {
+      return '<option value="' + esc(m.id) + '"' + (m.id === cur ? ' selected' : '') + '>' + esc(m.name === m.id ? m.id : m.name + ' (' + m.id + ')') + '</option>';
+    }).join('') + '<option value="__other">' + esc(t('Drugi model…')) + '</option></select>' +
+    '<p class="small-note">' + esc(note) + '</p></div>';
+}
+function adminModelPick(v) {
+  if (v === '__other') { render(true); adminModel(); return; }
+  if (adm.cfg && v && v !== adm.cfg.model) adminConfig({ model: v });
 }
 function adminModel() {
   modal({ title: t('Gemini model'), text: t('Tačan naziv modela iz AI Studija, na primer gemini-3.8-flash. Ako model ne postoji, korisnici dobijaju poruku da AI nije podešen.'),

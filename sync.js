@@ -397,12 +397,6 @@ async function syncBoot() {
   window.addEventListener('online', function () { if (sync.user) syncNow(); });
   document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible' && sync.user) syncNow(); });
 }
-// Google "G" u bojama (zvanični oblik znaka), za dugme za prijavu
-var ICON_GOOGLE = '<svg class="g-logo" width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">' +
-  '<path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>' +
-  '<path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>' +
-  '<path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>' +
-  '<path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>';
 // povratak sa Google prijave: ?code=… (uspeh) ili ?error_description=… (otkazano ili greška)
 function syncOAuthReturn() {
   var q = new URLSearchParams(location.search), h = new URLSearchParams(location.hash.replace(/^#/, ''));
@@ -433,14 +427,54 @@ function syncFreshStart() {
   setTimeout(function () { location.reload(); }, 300);
   return true;
 }
-async function syncGoogle() {
+/* Prijava mejlom i lozinkom, bez potvrde na mejl (Supabase → Email: "Confirm email" isključeno),
+   pa nalog radi odmah po registraciji. */
+function syncCreds() {
+  var e = document.getElementById('syncEmail'), p = document.getElementById('syncPass');
+  var email = e ? e.value.trim() : '', pass = p ? p.value : '';
+  if (!/^\S+@\S+\.\S+$/.test(email)) { toast(t('Upiši ispravnu e-mail adresu.')); if (e) e.focus(); return null; }
+  if (pass.length < 6) { toast(t('Lozinka mora da ima bar 6 znakova.')); if (p) p.focus(); return null; }
+  return { email: email, password: pass };
+}
+function syncAuthError(e, create) {
+  var code = (e && e.code) || '', msg = (e && e.message) || '';
+  if (code === 'invalid_credentials' || /invalid login/i.test(msg)) return t('Pogrešan mejl ili lozinka. Ako si se ranije prijavljivao Google-om, prvo postavi lozinku u Podešavanjima na uređaju gde si prijavljen.');
+  if (code === 'user_already_exists' || /already registered/i.test(msg)) return t('Nalog sa tom adresom već postoji. Prijavi se lozinkom.');
+  if (code === 'weak_password') return t('Lozinka je preslaba. Izaberi dužu.');
+  if (code === 'over_request_rate_limit' || code === 'over_email_send_rate_limit') return t('Previše pokušaja. Sačekaj malo pa probaj ponovo.');
+  return create ? t('Nalog nije napravljen: {m}', { m: msg }) : t('Prijava nije uspela: {m}', { m: msg });
+}
+async function syncPassLogin(create) {
+  var cr = syncCreds(); if (!cr || sync.loggingIn) return;
+  sync.loggingIn = true;
   try {
-    await Promise.resolve(saveNow());   // stranica odlazi na Google, pa se sve prvo sačuva
-    syncMarkFresh();
-    var c = await syncClient();
-    var r = await c.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname, queryParams: { prompt: 'select_account' } } });
+    await Promise.resolve(saveNow());
+    syncMarkFresh();   // nova prijava: lokalni podaci se brišu i preuzimaju sa naloga (syncFreshStart)
+    var c = await syncClient(), r = create ? await c.auth.signUp(cr) : await c.auth.signInWithPassword(cr);
     if (r.error) throw r.error;
-  } catch (e) { toast(t('Prijava sa Google-om nije uspela: {m}', { m: (e && e.message) || '' })); }
+    var sess = r.data && r.data.session;
+    if (!sess) throw { code: create ? 'user_already_exists' : 'invalid_credentials' };
+    sync.user = sess.user;
+    if (!syncFreshStart()) { toast(t('Prijavljen si. Sinhronizujem…')); render(true); }
+  } catch (e) {
+    try { localStorage.removeItem(FRESH_KEY); } catch (x) {}
+    toast(syncAuthError(e, create));
+  } finally { sync.loggingIn = false; }
+}
+function syncSignIn() { return syncPassLogin(false); }
+function syncSignUp() { return syncPassLogin(true); }
+// lozinka za nalog napravljen preko Google-a (ili promena lozinke), dok je korisnik prijavljen
+function syncSetPassword() {
+  modal({ title: t('Lozinka za prijavu'), text: t('Sa adresom {e} i ovom lozinkom prijavljuješ se na drugim uređajima. Najmanje 6 znakova.', { e: (sync.user && sync.user.email) || '' }),
+    input: { type: 'password', placeholder: t('Nova lozinka'), autocomplete: 'new-password' },
+    buttons: [{ label: t('Sačuvaj'), kind: 'primary', onClick: function (v) {
+      v = v || '';
+      if (v.length < 6) { toast(t('Lozinka mora da ima bar 6 znakova.')); return false; }
+      syncClient().then(function (c) { return c.auth.updateUser({ password: v }); }).then(function (r) {
+        if (r.error) throw r.error;
+        toast(t('Lozinka je sačuvana.'));
+      }).catch(function (e) { toast(t('Lozinka nije sačuvana: {m}', { m: (e && e.message) || '' })); });
+    } }, { label: t('Otkaži'), kind: 'cancel' }] });
 }
 // uloga, blokada i dnevni limit za AI preko ključa aplikacije; usput beleži poslednju aktivnost
 async function syncLoadProfile() {
@@ -540,10 +574,14 @@ function viewLoginGate(gate) {
     '<p class="small-note"><a href="privacy.html" target="_blank" rel="noopener">' + t('Politika privatnosti') + '</a></p>' +
     '</div>';
 }
-// prijava je samo preko Google-a; intro=true dodaje objašnjenje (u podešavanjima)
+// prijava mejlom i lozinkom; intro=true dodaje objašnjenje (u podešavanjima)
 function syncLoginBody(intro) {
   return (intro ? '<p class="small-note">' + t('Prijavi se istim nalogom na telefonu i računaru i sve se sinhronizuje samo: kartice, napredak, beleške, fajlovi i statistika. Sa nalogom AI radi i bez tvog ključa.') + '</p>' : '') +
-    '<button class="btn small google-btn" data-act="syncGoogle">' + ICON_GOOGLE + t('Prijavi se sa Google-om') + '</button>';
+    '<input class="input" id="syncEmail" type="email" autocomplete="email" autocapitalize="off" placeholder="ime@primer.com" aria-label="' + esc(t('E-mail adresa')) + '">' +
+    '<input class="input" id="syncPass" type="password" autocomplete="current-password" placeholder="' + esc(t('Lozinka')) + '" aria-label="' + esc(t('Lozinka')) + '">' +
+    '<div class="row-btns even"><button class="btn small primary" data-act="syncSignIn">' + t('Prijavi se') + '</button>' +
+    '<button class="btn small" data-act="syncSignUp">' + t('Napravi nalog') + '</button></div>' +
+    '<p class="small-note">' + t('Nov si? Upiši mejl i lozinku (bar 6 znakova) i pritisni Napravi nalog. Potvrda na mejl ne treba.') + '</p>';
 }
 
 function syncSettingsSection() {
@@ -554,6 +592,7 @@ function syncSettingsSection() {
       '<p class="small-note num" id="syncStatus">' + esc(syncStatusText()) + '</p>' +
       '<div class="row-btns even"><button class="btn small" data-act="syncNow">' + t('Sinhronizuj sada') + '</button>' +
       '<button class="btn small" data-act="syncSignOut">' + t('Odjavi se') + '</button></div>' +
+      '<button class="btn small" data-act="syncSetPassword">' + t('Postavi lozinku') + '</button>' +
       (syncIsAdmin() ? '<button class="btn small" data-act="openAdmin">' + t('Admin panel') + '</button>' : '') +
       '<p class="small-note">' + t('Administrator aplikacije može da vidi i menja tvoje kartice, kvizove i beleške i da ti pripremi novi materijal.') + ' <a href="privacy.html" target="_blank" rel="noopener">' + t('Politika privatnosti') + '</a></p>';
   } else {

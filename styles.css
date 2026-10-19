@@ -471,8 +471,6 @@ body.on-viewer .fs { display: none; }
 /* vrednost desno u redu (admin panel: limit, model) */
 .toggle-row > b { flex: none; max-width: 45%; font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* prijava Google-om: neutralno dugme sa znakom u bojama */
-.google-btn { display: flex; align-items: center; justify-content: center; gap: 10px; }
-.google-btn .g-logo { flex: none; }
 
 /* učenje: Poništi, slike na kartici, dug tekst kad se uči obrnuto (odgovor je napred) */
 .link.undo { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; font-size: 14px; }

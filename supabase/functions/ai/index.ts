@@ -55,6 +55,19 @@ Deno.serve(async (req) => {
   } catch {
     return json({ error: "bad_request" }, 400, cors);
   }
+  // spisak Gemini modela za izbor u admin panelu: samo za administratora i ne troši dnevni limit
+  if (body?.listModels === true) {
+    const { data: prof } = await db.from("profiles").select("role").eq("user_id", user.id).maybeSingle();
+    if (prof?.role !== "admin") return json({ error: "forbidden" }, 403, cors);
+    const r = await fetch(GEMINI_API + "models?pageSize=1000", { headers: { "x-goog-api-key": key } });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) return json({ error: { message: j?.error?.message ?? r.statusText } }, 502, cors);
+    const models = (j.models ?? [])
+      .filter((m: any) => (m.supportedGenerationMethods ?? []).includes("generateContent"))
+      .map((m: any) => ({ id: String(m.name).replace(/^models\//, ""), name: String(m.displayName ?? m.name) }))
+      .filter((m: any) => /^gemini-/.test(m.id) && !/embedding|tts|image|live|audio|native|aqa|robotics|computer/i.test(m.id));
+    return json({ models }, 200, cors);
+  }
   if (!Array.isArray(body?.contents)) return json({ error: "bad_request" }, 400, cors);
 
   // blokada, prekidač i dnevni limit; poziv se odmah broji

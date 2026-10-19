@@ -3,7 +3,7 @@
    Pri svakom objavljivanju: povećati APP_VERSION, isti broj upisati u version.json
    i u ?v= parametre u index.html. */
 
-var APP_VERSION = 28;
+var APP_VERSION = 29;
 
 /* ---------- pomoćne funkcije ---------- */
 function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
@@ -542,7 +542,7 @@ function viewStudy() {
       (sd.cloze ? '' : '<button class="q-small' + (sd.rev ? ' clamp' : '') + '" data-act="flip"><span class="eyebrow">' + sd.front.label + '</span><span class="md">' + renderMarkup(sd.front.md, { inline: true }) + '</span></button>' +
       '<div class="divider"></div>') +
       typed +
-      '<div class="answer-scroll"><button class="answer" data-act="flip" aria-label="' + esc(t('Vrati na pitanje')) + '">' + ans + '</button></div>' +
+      '<div class="answer-scroll"><button class="answer" data-act="flip" aria-label="' + esc(t('Vrati na pitanje')) + '">' + ans + '</button>' + explainHtml() + '</div>' +
       '<span class="hint"><span class="touch-only">' + t('Prevuci desno ako znaš, levo ako ne znaš') + '</span><span class="mouse-only">' + t('Klikni karticu za pitanje') + '</span></span></div>' +
       speakBtn('back');
     if (srsMode) {
@@ -756,12 +756,13 @@ function viewQuizPlay() {
       return '<button class="' + cls + '" data-act="pick" data-arg="' + o.i + '"' + (answered ? ' disabled' : '') + '>' +
         '<span class="opt-key">' + (answered && o.i === q.correct ? ICON.check : answered && o.i === s.picked ? ICON.x : LETTERS[k]) + '</span>' +
         '<span class="opt-text md">' + renderMarkup(o.t, { inline: true }) + '</span></button>';
-    }).join('') + '</div></div>';
+    }).join('') + '</div>' + (answered ? explainHtml() : '') + '</div>';
   var last = s.i + 1 >= s.order.length;
   var actions = answered
     ? '<div class="quiz-actions">' +
         '<p class="quiz-fb ' + (s.picked === q.correct ? 'good">' + t('Tačno!') : 'bad">' + (s.picked < 0 ? '' : t('Netačno.') + ' ') + t('Tačan odgovor je {l}.', { l: rightLetter })) + '</p>' +
-        '<button class="btn primary" data-act="nextQ">' + (last ? t('Završi kviz') : t('Sledeće pitanje')) + '</button></div>'
+        '<button class="btn primary" data-act="nextQ">' + (last ? t('Završi kviz') : t('Sledeće pitanje')) + '</button>' +
+        (aiReady() ? '<div class="explain-row"><button class="link" data-act="explain">' + ICON.spark + '<span>' + t('Objasni mi') + '</span></button></div>' : '') + '</div>'
     : '<div class="quiz-actions"><button class="btn" data-act="dontKnow">' + t('Ne znam, prikaži odgovor') + '</button></div>';
   var keys = '<div class="keys">' + (answered
     ? '<span><kbd>Enter</kbd> ' + t('dalje') + '</span><span><kbd>Esc</kbd> ' + t('meni') + '</span>'
@@ -1018,7 +1019,7 @@ function modal(o) {
   }).join('');
   var html = '<div class="modal' + (fields ? ' wide' : '') + '" role="' + (o.input || fields ? 'dialog' : 'alertdialog') + '" aria-modal="true" aria-labelledby="mTitle">' +
     '<h2 id="mTitle">' + esc(o.title) + '</h2>' + (o.text ? '<p>' + esc(o.text) + '</p>' : '') +
-    (o.input ? '<input class="input" id="mInput" value="' + esc(o.input.value || '') + '" placeholder="' + esc(o.input.placeholder || '') + '" autocomplete="off">' : '') +
+    (o.input ? '<input class="input" id="mInput" type="' + (o.input.type || 'text') + '" value="' + esc(o.input.value || '') + '" placeholder="' + esc(o.input.placeholder || '') + '" autocomplete="' + (o.input.autocomplete || 'off') + '">' : '') +
     fields +
     '<div class="modal-btns">' + o.buttons.map(function (b, i) {
       return '<button type="button" data-i="' + i + '" class="m-' + (b.kind || 'plain') + '"' + (b.kind === 'current' ? ' disabled' : '') + '>' + esc(b.label) + '</button>';
@@ -2659,7 +2660,7 @@ var acts = {
   exitAs: function () { syncExitAs(); },
   explain: aiExplain,
   // nalog i sinhronizacija (sync.js)
-  syncSignOut: syncSignOut, syncGoogle: syncGoogle,
+  syncSignOut: syncSignOut, syncSignIn: syncSignIn, syncSignUp: syncSignUp, syncSetPassword: syncSetPassword,
   remindToggle: function () { if (data.settings.remind) remindOff(); else remindOn(); },
   syncNow: function () { sync.error = ''; syncNow(); },
   cardType: function (v) {
@@ -2978,6 +2979,8 @@ document.addEventListener('change', function (e) {
     ui.ai.dest = tg.value;
   } else if (tg.id === 'remindTime') {
     remindTime(tg.value);
+  } else if (tg.id === 'adminModelSel') {
+    adminModelPick(tg.value);
   } else if (tg.dataset.setting) {
     data.settings[tg.dataset.setting] = tg.value; save();
   } else if (tg.dataset.voice) {
@@ -3004,9 +3007,9 @@ document.addEventListener('keydown', function (e) {
   var tag = (e.target.tagName || '').toLowerCase();
   if (document.querySelector('.modal-back')) return;
   if (tag === 'input' || tag === 'textarea' || tag === 'select') {
-    // kucanje odgovora: Enter okreće karticu; Enter u polju za ključ potvrđuje
+    // kucanje odgovora: Enter okreće karticu; Enter u poljima za prijavu i ključ potvrđuje
     if (e.target.id === 'typeAns' && e.key === 'Enter') { e.preventDefault(); flip(); return; }
-    var enterAct = { aiKeyInput: aiSaveKey, geminiKeyInput: aiSaveKey }[e.target.id];
+    var enterAct = { syncEmail: function () { var p = document.getElementById('syncPass'); if (p) p.focus(); }, syncPass: syncSignIn, aiKeyInput: aiSaveKey, geminiKeyInput: aiSaveKey }[e.target.id];
     if (enterAct && e.key === 'Enter') { e.preventDefault(); enterAct(); return; }
     // Esc iz polja: pretraga se prvo isprazni, a sa ekrana za pisanje se izlazi (sve je već sačuvano)
     if (e.key === 'Escape' && !(e.target.type === 'search' && e.target.value) && /^(edit|quizEdit|noteEdit)$/.test(ui.screen)) {
