@@ -10,7 +10,7 @@ var SYNC_SETTINGS = ['font', 'size', 'lang', 'reduceMotion', 'pdfDark', 'pdfMode
   'ttsAuto', 'ttsRate', 'aiProvider', 'aiModel', 'geminiModel', 'typeAnswer', 'remindAt'];
 // ai: stanje za AI preko ključa aplikacije iz touch_profile { role, blocked, on, used, limit } (null dok se ne učita)
 // ready: da li se već zna da li postoji sesija (do tada se ne prikazuje ni aplikacija ni ekran za prijavu)
-var sync = { client: null, user: null, meta: null, timer: null, running: null, again: false, status: '', error: '', sent: null, ai: null, ready: false, opened: false };
+var sync = { client: null, user: null, meta: null, timer: null, running: null, again: false, status: '', error: '', ai: null, ready: false, opened: false };
 
 function syncConfigured() { return typeof SUPABASE_URL === 'string' && !!SUPABASE_URL && typeof SUPABASE_ANON_KEY === 'string' && !!SUPABASE_ANON_KEY; }
 async function syncClient() {
@@ -381,7 +381,7 @@ async function syncBoot() {
     c.auth.onAuthStateChange(function (ev, session) {
       var u = session ? session.user : null, was = sync.user;
       sync.user = u;
-      if (u && syncFreshPending()) return;   // prijava kodom: syncVerify briše lokalne podatke
+      if (u && syncFreshPending()) return;   // nova prijava: syncFreshStart briše lokalne podatke
       if (u && (!was || was.id !== u.id)) { syncLoadMeta().then(syncNow); syncLoadProfile(); syncLogOpen(); }
       if (!u) sync.ai = null;
       // promena naloga otvara ili zatvara ekran za prijavu
@@ -452,27 +452,6 @@ async function syncLoadProfile() {
   if (/^(settings|admin)$/.test(ui.screen)) render(true);
 }
 function syncIsAdmin() { return !!(sync.user && sync.ai && sync.ai.role === 'admin'); }
-async function syncSendCode() {
-  var el = document.getElementById('syncEmail'), email = el ? el.value.trim() : '';
-  if (!/^\S+@\S+\.\S+$/.test(email)) { toast(t('Upiši ispravnu e-mail adresu.')); if (el) el.focus(); return; }
-  try {
-    var c = await syncClient(), r = await c.auth.signInWithOtp({ email: email, options: { shouldCreateUser: true } });
-    if (r.error) throw r.error;
-    sync.sent = email; render(true);
-    var ce = document.getElementById('syncCode'); if (ce) ce.focus();
-  } catch (e) { toast(t('Kod nije poslat: {m}', { m: (e && e.message) || '' })); }
-}
-async function syncVerify() {
-  var el = document.getElementById('syncCode'), code = el ? el.value.replace(/\s+/g, '') : '';
-  if (!/^\d{6,8}$/.test(code)) { toast(t('Upiši kod iz e-mail poruke.')); if (el) el.focus(); return; }
-  try {
-    syncMarkFresh();
-    var c = await syncClient(), r = await c.auth.verifyOtp({ email: sync.sent, token: code, type: 'email' });
-    if (r.error) throw r.error;
-    sync.sent = null;
-    if (!syncFreshStart()) toast(t('Prijavljen si. Sinhronizujem…'));
-  } catch (e) { toast(t('Kod nije ispravan ili je istekao.')); }
-}
 function syncSignOut() {
   modal({ title: t('Odjaviti se?'), text: t('Sve što je sinhronizovano ostaje na nalogu. Pri sledećoj prijavi podaci na ovom uređaju se brišu i preuzimaju sa naloga.'), buttons: [
     { label: t('Odjavi se'), kind: 'danger', onClick: function () {
@@ -561,19 +540,10 @@ function viewLoginGate(gate) {
     '<p class="small-note"><a href="privacy.html" target="_blank" rel="noopener">' + t('Politika privatnosti') + '</a></p>' +
     '</div>';
 }
-// Google prijava i prijava kodom; intro=true dodaje objašnjenje (u podešavanjima)
+// prijava je samo preko Google-a; intro=true dodaje objašnjenje (u podešavanjima)
 function syncLoginBody(intro) {
-  if (sync.sent) {
-    return '<p class="small-note">' + t('Poslali smo kod na {e}. Upiši ga ovde (stiže za minut, proveri i neželjenu poštu).', { e: esc(sync.sent) }) + '</p>' +
-      '<input class="input" id="syncCode" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" aria-label="' + esc(t('Kod iz e-mail poruke')) + '">' +
-      '<div class="row-btns even"><button class="btn small primary" data-act="syncVerify">' + t('Prijavi se') + '</button>' +
-      '<button class="btn small" data-act="syncReset">' + t('Druga adresa') + '</button></div>';
-  }
   return (intro ? '<p class="small-note">' + t('Prijavi se istim nalogom na telefonu i računaru i sve se sinhronizuje samo: kartice, napredak, beleške, fajlovi i statistika. Sa nalogom AI radi i bez tvog ključa.') + '</p>' : '') +
-    '<button class="btn small google-btn" data-act="syncGoogle">' + ICON_GOOGLE + t('Prijavi se sa Google-om') + '</button>' +
-    '<p class="small-note">' + t('Ili bez Google-a: upiši e-mail i stiže ti kod, lozinka ne treba.') + '</p>' +
-    '<input class="input" id="syncEmail" type="email" autocomplete="email" placeholder="ime@primer.com" aria-label="' + esc(t('E-mail adresa')) + '">' +
-    '<button class="btn small" data-act="syncSendCode">' + t('Pošalji kod') + '</button>';
+    '<button class="btn small google-btn" data-act="syncGoogle">' + ICON_GOOGLE + t('Prijavi se sa Google-om') + '</button>';
 }
 
 function syncSettingsSection() {

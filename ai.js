@@ -333,7 +333,6 @@ function aiNeedKey() {
   if (aiKeySource() === 'app') {
     modal({ title: t('Prijavi se za AI'), text: t('AI radi bez tvog ključa kad si prijavljen. Može i sa tvojim ključem, u Podešavanja → AI asistent.'),
       buttons: [{ label: t('Prijavi se sa Google-om'), kind: 'primary', onClick: function () { syncGoogle(); } },
-        { label: t('Prijava e-mail kodom'), kind: 'plain', onClick: function () { ui.screen = 'settings'; render(); setTimeout(function () { var el = document.getElementById('syncEmail'); if (el) { el.scrollIntoView({ block: 'center' }); el.focus(); } }, 50); } },
         { label: t('Upiši svoj ključ'), kind: 'plain', onClick: function () { aiSetSource('own'); ui.screen = 'settings'; render(); setTimeout(function () { var el = document.getElementById('aiSourceSeg'); if (el) el.scrollIntoView({ block: 'center' }); }, 50); } },
         { label: t('Otkaži'), kind: 'cancel' }] });
     return;

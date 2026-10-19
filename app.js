@@ -3,7 +3,7 @@
    Pri svakom objavljivanju: povećati APP_VERSION, isti broj upisati u version.json
    i u ?v= parametre u index.html. */
 
-var APP_VERSION = 27;
+var APP_VERSION = 28;
 
 /* ---------- pomoćne funkcije ---------- */
 function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
@@ -2659,8 +2659,7 @@ var acts = {
   exitAs: function () { syncExitAs(); },
   explain: aiExplain,
   // nalog i sinhronizacija (sync.js)
-  syncSendCode: syncSendCode, syncVerify: syncVerify, syncSignOut: syncSignOut, syncGoogle: syncGoogle,
-  syncReset: function () { sync.sent = null; render(true); },
+  syncSignOut: syncSignOut, syncGoogle: syncGoogle,
   remindToggle: function () { if (data.settings.remind) remindOff(); else remindOn(); },
   syncNow: function () { sync.error = ''; syncNow(); },
   cardType: function (v) {
@@ -3005,9 +3004,9 @@ document.addEventListener('keydown', function (e) {
   var tag = (e.target.tagName || '').toLowerCase();
   if (document.querySelector('.modal-back')) return;
   if (tag === 'input' || tag === 'textarea' || tag === 'select') {
-    // kucanje odgovora: Enter okreće karticu; Enter u poljima za prijavu i ključ potvrđuje
+    // kucanje odgovora: Enter okreće karticu; Enter u polju za ključ potvrđuje
     if (e.target.id === 'typeAns' && e.key === 'Enter') { e.preventDefault(); flip(); return; }
-    var enterAct = { syncEmail: syncSendCode, syncCode: syncVerify, aiKeyInput: aiSaveKey, geminiKeyInput: aiSaveKey }[e.target.id];
+    var enterAct = { aiKeyInput: aiSaveKey, geminiKeyInput: aiSaveKey }[e.target.id];
     if (enterAct && e.key === 'Enter') { e.preventDefault(); enterAct(); return; }
     // Esc iz polja: pretraga se prvo isprazni, a sa ekrana za pisanje se izlazi (sve je već sačuvano)
     if (e.key === 'Escape' && !(e.target.type === 'search' && e.target.value) && /^(edit|quizEdit|noteEdit)$/.test(ui.screen)) {

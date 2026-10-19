@@ -33,7 +33,7 @@ Adresa: https://aleksapjescic.github.io/kartice/
 | `stats.js` | statistika, dani zaredom, značke, ekran Statistika |
 | `markup.js` | formatiranje teksta, formule, praznine, čitanje naglas |
 | `ai.js` | AI asistent (Claude ili Gemini, tvoj ključ ili ključ aplikacije) |
-| `sync.js`, `config.js` | nalog (Google ili e-mail kod), sinhronizacija i podsetnici (Supabase) |
+| `sync.js`, `config.js` | nalog (prijava samo Google-om), sinhronizacija i podsetnici (Supabase) |
 | `admin.js` | admin panel: korisnici, limiti, ključ aplikacije |
 | `supabase/` | šema baze, funkcije za podsetnike i AI (`functions/ai`) i uputstvo za podešavanje |
 | `tests/run.js` | testovi bez pregledača: `node tests/run.js` |
