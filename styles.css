@@ -704,6 +704,28 @@ details.free .body { display: flex; flex-direction: column; gap: 12px; padding-b
   .quiz-q { padding: 28px 32px; }
   .quiz-q-text { font-size: calc(26px * var(--ts)); letter-spacing: -.5px; }
 }
+/* veliki ekrani: raspored se širi da iskoristi ceo ekran; dugački tekst (68ch) ostaje čitljive širine */
+@media (min-width: 1200px) {
+  #app { padding-left: 48px; padding-right: 48px; }
+  .home, .deck-wide { max-width: 1400px; }
+  .decks { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .folder-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .note-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .deck-menu { gap: 80px; }
+  .deck-menu .head h1 { font-size: 68px; }
+  .study, .quiz-play { max-width: 1100px; }
+  .edit, .folder-screen { max-width: 1100px; }
+  .note-edit, .note-read, .doc-read { max-width: 1000px; }
+  .stats-screen { max-width: 1200px; }
+  .settings { max-width: 820px; }
+  .done, .quiz-done { max-width: 900px; }
+}
+@media (min-width: 1700px) {
+  .home, .deck-wide { max-width: 1720px; }
+  .decks { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .study, .quiz-play, .edit, .folder-screen { max-width: 1300px; }
+  .stats-screen { max-width: 1400px; }
+}
 @media (max-height: 640px) and (max-width: 899px) {
   .screen { padding-bottom: 16px; }
   .q-big { font-size: calc(22px * var(--ts)); }
