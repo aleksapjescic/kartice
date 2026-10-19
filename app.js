@@ -428,7 +428,7 @@ function nextDueLine(keys) {
 function stateLine(sc) {
   return t('Nove {a} · U učenju {b} · Naučene {c}', { a: sc.fresh, b: sc.learning, c: sc.young + sc.mature });
 }
-// spisak naučenih i nenaučenih kartica u špilu (Znam / Ne znam iz učenja)
+// spisak naučenih i nenaučenih kartica u špilu (Znam / Ne znam iz učenja); svaka može ručno da se prebaci
 function knownCardsMenu(d, kc, unk) {
   var tab = ui.knownTab === 'known' ? 'known' : 'unk';
   var list = d.cards.filter(function (c) { return tab === 'known' ? !!d.known[c.id] : !d.known[c.id]; });
@@ -436,7 +436,8 @@ function knownCardsMenu(d, kc, unk) {
     seg('knownTab', [['unk', t('Nenaučene ({n})', { n: unk })], ['known', t('Naučene ({n})', { n: kc })]], tab) +
     (list.length
       ? '<ul class="known-list">' + list.map(function (c) {
-          return '<li><span class="q">' + esc(plainText(c.q)) + '</span>' + (c.a ? '<span class="a">' + esc(plainText(c.a)) + '</span>' : '') + '</li>';
+          return '<li><div class="txt"><span class="q">' + esc(plainText(c.q)) + '</span>' + (c.a ? '<span class="a">' + esc(plainText(c.a)) + '</span>' : '') + '</div>' +
+            '<button class="link" data-act="knownToggle" data-arg="' + esc(c.id) + '">' + (tab === 'known' ? t('U nenaučene') : t('U naučene')) + '</button></li>';
         }).join('') + '</ul>'
       : '<p class="small-note">' + (tab === 'known' ? t('Još nema naučenih kartica.') : t('Sve kartice su naučene.')) + '</p>') +
     '</div></details>';
@@ -2604,6 +2605,12 @@ var acts = {
   theme: function (v) { data.theme = v; save(); render(true); },
   order: function (v) { data.random = v === 'rnd'; save(); render(true); },
   knownTab: function (v) { ui.knownTab = v; render(true); },
+  knownToggle: function (id) {
+    var d = deck(); if (!d || !cardById(d, id)) return;
+    if (d.known[id]) delete d.known[id]; else d.known[id] = true;
+    save(); render(true);
+    toast(d.known[id] ? t('Kartica je prebačena u naučene.') : t('Kartica je prebačena u nenaučene.'));
+  },
   side: function (v) { data.reverse = v === 'aq'; save(); render(true); },
   undoMark: undoMark,
   startAll: function () { begin(deck().cards.map(function (c) { return c.id; })); },

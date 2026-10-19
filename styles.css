@@ -559,7 +559,9 @@ details.free summary::after { content: "+"; color: var(--muted); }
 details.free[open] summary::after { content: "–"; }
 details.free .body { display: flex; flex-direction: column; gap: 12px; padding-bottom: 16px; }
 .known-list { list-style: none; margin: 0; padding: 0; max-height: 360px; overflow-y: auto; border-top: 1px solid var(--line); }
-.known-list li { display: flex; flex-direction: column; gap: 2px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 15px; line-height: 1.4; }
+.known-list li { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 15px; line-height: 1.4; }
+.known-list .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.known-list .link { flex: none; font-size: 13px; min-height: 32px; white-space: nowrap; }
 .known-list .q, .known-list .a { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
 .known-list .a { font-size: 13px; color: var(--muted); }
 .row-btns.even { grid-template-columns: repeat(2, minmax(0, 1fr)); }
