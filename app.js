@@ -3,7 +3,7 @@
    Pri svakom objavljivanju: povećati APP_VERSION, isti broj upisati u version.json
    i u ?v= parametre u index.html. */
 
-var APP_VERSION = 29;
+var APP_VERSION = 30;
 
 /* ---------- pomoćne funkcije ---------- */
 function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
@@ -428,6 +428,19 @@ function nextDueLine(keys) {
 function stateLine(sc) {
   return t('Nove {a} · U učenju {b} · Naučene {c}', { a: sc.fresh, b: sc.learning, c: sc.young + sc.mature });
 }
+// spisak naučenih i nenaučenih kartica u špilu (Znam / Ne znam iz učenja)
+function knownCardsMenu(d, kc, unk) {
+  var tab = ui.knownTab === 'known' ? 'known' : 'unk';
+  var list = d.cards.filter(function (c) { return tab === 'known' ? !!d.known[c.id] : !d.known[c.id]; });
+  return '<details class="free known-cards"><summary>' + t('Naučene i nenaučene kartice') + '</summary><div class="body">' +
+    seg('knownTab', [['unk', t('Nenaučene ({n})', { n: unk })], ['known', t('Naučene ({n})', { n: kc })]], tab) +
+    (list.length
+      ? '<ul class="known-list">' + list.map(function (c) {
+          return '<li><span class="q">' + esc(plainText(c.q)) + '</span>' + (c.a ? '<span class="a">' + esc(plainText(c.a)) + '</span>' : '') + '</li>';
+        }).join('') + '</ul>'
+      : '<p class="small-note">' + (tab === 'known' ? t('Još nema naučenih kartica.') : t('Sve kartice su naučene.')) + '</p>') +
+    '</div></details>';
+}
 function viewDeck() {
   var d = deck();
   var kc = knownCount(d), total = d.cards.length, unk = total - kc, p = pct(d);
@@ -458,6 +471,7 @@ function viewDeck() {
           '<div class="row-btns even"><button class="btn" data-act="startAll">' + t('Sve kartice') + '</button>' +
           '<button class="btn" data-act="startUnknown"' + (unk ? '' : ' disabled') + '>' + t('Nenaučene ({n})', { n: unk }) + '</button></div>' +
         '</div></details>' : '') +
+        (total ? knownCardsMenu(d, kc, unk) : '') +
         '<div class="stack">' +
           '<button class="btn" data-act="edit">' + t('Izmeni kartice') + '</button>' +
           '<div style="display:flex;justify-content:center;flex-wrap:wrap;gap:4px 16px">' +
@@ -933,6 +947,19 @@ function applyTheme() {
   var meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute('content', getComputedStyle(b).getPropertyValue('--bg').trim() || '#1C1B1A');
 }
+/* Rasklopljeni delovi (<details>, npr. Slobodno učenje) ostaju kakve ih je korisnik ostavio i kad se ekran
+   ponovo iscrta (posle sinhronizacije ili izbora opcije); inače bi se sami zatvorili. */
+var detailsState = {};
+function detailsKey(el) { return ui.screen + ':' + (ui.deckId || '') + ':' + (ui.quizId || '') + ':' + el.className; }
+document.addEventListener('toggle', function (e) {
+  if (e.target.tagName === 'DETAILS') detailsState[detailsKey(e.target)] = e.target.open;
+}, true);
+function restoreDetails() {
+  app.querySelectorAll('details').forEach(function (el) {
+    var k = detailsKey(el);
+    if (k in detailsState && el.open !== detailsState[k]) el.open = detailsState[k];
+  });
+}
 function render(keepScroll) {
   if (!data) return;   // podaci se još učitavaju (boot)
   destroyViewer();
@@ -964,6 +991,7 @@ function render(keepScroll) {
   var fsBtn = document.fullscreenEnabled
     ? '<button class="fs" data-act="fs" aria-label="' + fsLabel + '" title="' + fsLabel + '">' + (ui.fs ? ICON.fsOff : ICON.fsOn) + '</button>' : '';
   app.innerHTML = fsBtn + (typeof syncAsBanner === 'function' ? syncAsBanner() : '') + html;
+  restoreDetails();
   // iOS Safari ne zna za field-sizing, pa polja za tekst rastu preko JS-a
   app.querySelectorAll('textarea').forEach(autosize);
   if (keepScroll) app.querySelector('.screen').scrollTop = prevScroll;
@@ -2575,6 +2603,7 @@ var acts = {
   },
   theme: function (v) { data.theme = v; save(); render(true); },
   order: function (v) { data.random = v === 'rnd'; save(); render(true); },
+  knownTab: function (v) { ui.knownTab = v; render(true); },
   side: function (v) { data.reverse = v === 'aq'; save(); render(true); },
   undoMark: undoMark,
   startAll: function () { begin(deck().cards.map(function (c) { return c.id; })); },
