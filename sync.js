@@ -238,44 +238,22 @@ async function pullAll(c, since) {
   }
   return rows;
 }
-// lokalni podaci koji još nisu menjani (samo početni špil, bez napretka)
-function pristine() {
-  return data.decks.length <= 1 && data.decks.every(function (d) { return d.id === 'mreze' && !Object.keys(d.known).length; }) &&
-    !Object.keys(data.rev).length && !data.notes.length && !data.quizzes.length && !data.folders.length;
-}
-function askMerge() {
-  return new Promise(function (res) {
-    modal({
-      title: t('Na nalogu već postoje podaci'),
-      text: t('Na ovom uređaju i na nalogu postoje kartice ili beleške. Spoji ih (ništa se ne gubi) ili zameni podatke na ovom uređaju podacima sa naloga.'),
-      buttons: [
-        { label: t('Spoji'), kind: 'primary', onClick: function () { res('merge'); } },
-        { label: t('Zameni podacima sa naloga'), kind: 'danger', onClick: function () { res('replace'); } },
-        { label: t('Otkaži'), kind: 'cancel', onClick: function () { res(null); } }
-      ]
-    });
-  });
-}
 async function syncRun() {
   var c = await syncClient();
   sync.error = ''; sync.status = 'busy'; syncShowStatus();
   var first = !sync.meta.lastPull;
-  // 1. prvi put na ovom uređaju: prvo preuzmi sve sa naloga
+  // 1. prvi put posle prijave na ovom uređaju: lokalni podaci se odmah, bez pitanja, zamenjuju podacima sa
+  //    naloga (stari lokalni podaci, npr. drugog korisnika, nikad ne stižu na nalog; kopija ostaje u rezervi)
   if (first) {
-    var all = await pullAll(c, null), live = all.filter(function (r) { return !r.deleted; });
-    if (live.length) {
-      var mode = pristine() ? 'replace' : await askMerge();
-      if (!mode) { sync.status = ''; return; }
-      if (mode === 'replace') {
-        if (!sync.as) await backupPut('pre-sync', { t: Date.now(), data: JSON.parse(JSON.stringify(data)) });
-        data.decks = []; data.quizzes = []; data.notes = []; data.folders = []; data.rev = {};
-        Object.keys(data.days).forEach(function (dev) { if (dev !== DEVICE_ID) delete data.days[dev]; });
-      }
+    var all = await pullAll(c, null);
+    if (!sync.as) await backupPut('pre-sync', { t: Date.now(), data: JSON.parse(JSON.stringify(data)) });
+    data.decks = []; data.quizzes = []; data.notes = []; data.folders = []; data.rev = {};
+    data.days = {};
+    if (all.length) {
       sync.applying = true;
       startApply(); all.forEach(applyRow); finishApply();
       sync.applying = false;
       shadowAfterApply(all.map(function (r) { return r.kind + '|' + r.id; }));
-      // u spajanju lokalne stavke koje se razlikuju ostaju bez otiska i šalju se u koraku 2
     }
     sync.meta.lastPull = maxTs(all, null) || new Date(0).toISOString();
     await saveNow();

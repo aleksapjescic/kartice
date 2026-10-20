@@ -167,7 +167,8 @@ async function test(name, fn) {
     A.decks[0].known.c0 = true;
     A.rev['c:mreze:c0'] = { due: 1, s: 1, d: 1, st: 2 };
     var B = c.normalize({ decks: [c.defaultDeck()], schema: 2 });
-    var dev = { A: { data: A, id: 'devA', meta: null }, B: { data: B, id: 'devB', meta: null } };
+    // A je uređaj koji je već sinhronizovan (ima lastPull), pa šalje svoje podatke; B je nova prijava
+    var dev = { A: { data: A, id: 'devA', meta: { uid: 'u', shadow: {}, files: {}, lastPull: new Date(0).toISOString(), gc: Date.now() } }, B: { data: B, id: 'devB', meta: null } };
     async function on(n, fn) {
       var d = dev[n]; c.data = d.data; c.DEVICE_ID = d.id; c.sync.user = { id: 'u' };
       c.sync.meta = d.meta || { uid: 'u', shadow: {}, files: {}, lastPull: null, gc: Date.now() };
@@ -176,6 +177,12 @@ async function test(name, fn) {
     }
     await on('A'); await on('B');
     check(dev.B.data.notes.length === 1 && dev.B.data.decks[0].known.c0 && dev.B.data.rev['c:mreze:c0'], 'novi uređaj dobija sve');
+    // nova prijava na uređaju sa starim lokalnim podacima: lokalno se briše bez pitanja i ništa staro ne ide na nalog
+    var C = c.normalize({ decks: [{ id: 'stari', name: 'Stari', cards: [{ id: 'x', q: 'q', a: 'a' }], known: {} }], schema: 2 });
+    dev.C = { data: C, id: 'devC', meta: null };
+    await on('C');
+    check(!dev.C.data.decks.some(function (d) { return d.id === 'stari'; }) && dev.C.data.notes.length === 1, 'nova prijava: lokalno zamenjeno nalogom');
+    check(!table.has('deck|stari') && !Array.from(table.keys()).some(function (k) { return /stari/.test(k); }), 'stari lokalni podaci ne idu na nalog');
     await on('A', function (d) { d.decks[0].cards[1].q = 'A2'; });
     await on('B', function (d) { d.decks[0].cards[2].q = 'B3'; });
     await on('A');
