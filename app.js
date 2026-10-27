@@ -3,7 +3,7 @@
    Pri svakom objavljivanju: povećati APP_VERSION, isti broj upisati u version.json
    i u ?v= parametre u index.html. */
 
-var APP_VERSION = 34;
+var APP_VERSION = 35;
 
 /* ---------- pomoćne funkcije ---------- */
 function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
@@ -445,10 +445,10 @@ function knownCardsMenu(d, kc, unk) {
 function viewDeck() {
   var d = deck();
   var kc = knownCount(d), total = d.cards.length, unk = total - kc, p = pct(d);
-  var keys = deckKeys(d), tc = todayCounts(keys), sc = stateCounts(keys);
-  var review = total === 0 ? '' : tc.total
-    ? '<button class="btn primary big-btn" data-act="startSrs"><span>' + t('Ponavljanje') + ' (' + tc.total + ')</span><small>' + esc(dueText(tc)) + '</small></button>'
-    : '<div class="panel done-today"><b>' + ICON.check + ' ' + t('Za danas gotovo') + '</b><span>' + esc(nextDueLine(keys)) + '</span></div>';
+  // učenje: kartice se promešaju i prolaze redom, svaka jednom u krugu (bez ponavljanja po rasporedu)
+  var study = total === 0 ? '' :
+    '<button class="btn primary big-btn" data-act="startAll"><span>' + t('Uči') + '</span><small>' + t('sve kartice ({n}), promešane', { n: total }) + '</small></button>' +
+    '<button class="btn" data-act="startUnknown"' + (unk ? '' : ' disabled') + '>' + t('Samo nenaučene ({n})', { n: unk }) + '</button>';
   return '<div class="screen deck-wide">' +
     '<div class="topbar">' + backBtn('home', t('Špilovi')) + '</div>' +
     '<div class="deck-menu">' +
@@ -456,21 +456,16 @@ function viewDeck() {
         '<div class="head" style="padding-top:0"><span class="eyebrow">' + esc(d.tag || t('Špil')) + '</span><h1>' + esc(d.name || t('Bez naziva')) + '</h1>' +
         '<span class="sub num">' + total + ' ' + pw(total, 'kartica') + '</span></div>' +
         '<div class="panel"><div class="row-between"><span style="font-size:15px;color:var(--muted)">' + t('Naučeno') + '</span>' +
-        '<span style="font-size:15px"><b style="font-weight:600">' + p + '%</b><span style="color:var(--muted)"> · ' + kc + ' / ' + total + '</span></span></div>' + bar(p) +
-        (total ? '<span class="small-note num">' + esc(stateLine(sc)) + '</span>' : '') + '</div>' +
+        '<span style="font-size:15px"><b style="font-weight:600">' + p + '%</b><span style="color:var(--muted)"> · ' + kc + ' / ' + total + '</span></span></div>' + bar(p) + '</div>' +
       '</div>' +
       '<div class="col">' +
         '<div class="stack">' +
           (total === 0 ? '<p class="sub" style="margin:0;font-size:15px">' + t('Špil je prazan. Dodaj prve kartice.') + '</p>' : '') +
-          review +
+          study +
         '</div>' +
-        (total ? '<details class="free"' + (tc.total ? '' : ' open') + '><summary>' + t('Slobodno učenje') + '</summary><div class="body">' +
-          '<p class="small-note">' + t('Učiš kad hoćeš i koliko hoćeš; raspored ponavljanja se ne menja.') + '</p>' +
-          '<div class="field"><span class="label">' + t('Redosled') + '</span>' + seg('order', [['seq', t('Po redu')], ['rnd', t('Nasumično')]], data.random ? 'rnd' : 'seq') + '</div>' +
+        (total ? '<details class="free"><summary>' + t('Podešavanja učenja') + '</summary><div class="body">' +
           '<div class="field"><span class="label">' + t('Smer') + '</span>' + seg('side', [['qa', t('Pitanje → odgovor')], ['aq', t('Odgovor → pitanje')]], data.reverse ? 'aq' : 'qa') + '</div>' +
-          toggleRow('typeAnswer', t('Kucanje odgovora'), t('Prvo upišeš odgovor, pa ga uporediš sa tačnim. Važi i za ponavljanje.')) +
-          '<div class="row-btns even"><button class="btn" data-act="startAll">' + t('Sve kartice') + '</button>' +
-          '<button class="btn" data-act="startUnknown"' + (unk ? '' : ' disabled') + '>' + t('Nenaučene ({n})', { n: unk }) + '</button></div>' +
+          toggleRow('typeAnswer', t('Kucanje odgovora'), t('Prvo upišeš odgovor, pa ga uporediš sa tačnim.')) +
         '</div></details>' : '') +
         (total ? knownCardsMenu(d, kc, unk) : '') +
         '<div class="stack">' +
@@ -1138,7 +1133,7 @@ function startSession(keys, mode, scope) {
   render();
   autoSpeak();
 }
-// slobodno učenje izabranih kartica jednog špila
+// učenje izabranih kartica jednog špila: promešane, svaka jednom (Ne znam je ne vraća u isti krug)
 function begin(ids) {
   var d = deck(), cards = ids.map(function (id) { return cardById(d, id); }).filter(Boolean);
   // učenje obrnuto ima smisla samo za kartice koje imaju odgovor (praznine se uče kao i uvek)
@@ -1148,7 +1143,7 @@ function begin(ids) {
   }
   if (!cards.length) return;
   var keys = deckKeys(d, cards);
-  startSession(data.random ? shuffled(keys) : keys, 'free', d.id);
+  startSession(shuffled(keys), 'free', d.id);
 }
 // ponavljanje po rasporedu: jedan špil ili svi ('all'); bonusNew su nove kartice preko dnevne granice
 function beginSrs(scope, bonusNew) {

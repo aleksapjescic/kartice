@@ -111,16 +111,14 @@ function goalRing(done, goal) {
     '<text x="22" y="26.5" text-anchor="middle" font-size="12" font-weight="600" fill="var(--ink)">' + (p >= 1 ? '✓' : Math.round(p * 100) + '%') + '</text></svg>';
 }
 function todayPanel() {
-  var now = Date.now(), dc = todayCounts(allDeckKeys(), now), qc = todayCounts(allQuizKeys(), now);
+  var now = Date.now(), qc = todayCounts(allQuizKeys(), now);
   var tot = dayTotals(dayKey(now)), goal = data.settings.goal || 0, st = streak(now);
-  var line = dc.total ? dueText(dc) : t('Sve kartice su ponovljene za danas.');
   var goalLine = goal ? t('Cilj: {a} od {g} odgovora', { a: tot.a, g: goal }) : t('{a} odgovora danas', { a: tot.a });
   return '<div class="today panel">' +
     '<div class="today-top">' + goalRing(tot.a, goal) +
-      '<div class="today-text"><b>' + t('Danas') + '</b><span>' + esc(line) + '</span><small>' + esc(goalLine) + '</small></div>' +
+      '<div class="today-text"><b>' + t('Danas') + '</b><span>' + esc(goalLine) + '</span></div>' +
       (st.cur ? '<span class="streak' + (st.today ? '' : ' cold') + '" title="' + esc(t('Dani zaredom')) + '">' + ICON.flame + '<b class="num">' + st.cur + '</b></span>' : '') +
     '</div>' +
-    (dc.total ? '<button class="btn primary" data-act="studyToday">' + t('Uči danas ({n})', { n: dc.total }) + '</button>' : '') +
     (qc.total ? '<button class="link" data-act="tab" data-arg="quizzes">' + t('Kvizovi: {n} za ponavljanje', { n: qc.total }) + '</button>' : '') +
     '</div>';
 }
@@ -235,10 +233,10 @@ function viewStats() {
   var acc = last30.rv ? Math.round(last30.ok / last30.rv * 100) + '%' : '–';
   // po špilu
   var deckRows = data.decks.map(function (d) {
-    var dk = deckKeys(d), sc = stateCounts(dk), tc = todayCounts(dk, now), all = dk.length || 1, learned = sc.young + sc.mature;
-    return '<div class="deck-stat"><div class="row-between"><b>' + esc(d.name || t('Bez naziva')) + '</b><span class="num">' + Math.round(learned / all * 100) + '%</span></div>' +
-      bar(learned / all * 100, 'thin') +
-      '<span class="small-note num">' + esc(stateLine(sc)) + (tc.total ? ' · ' + esc(t('danas {n}', { n: tc.total })) : '') + '</span></div>';
+    var kc = knownCount(d), all = d.cards.length || 1;
+    return '<div class="deck-stat"><div class="row-between"><b>' + esc(d.name || t('Bez naziva')) + '</b><span class="num">' + Math.round(kc / all * 100) + '%</span></div>' +
+      bar(kc / all * 100, 'thin') +
+      '<span class="small-note num">' + esc(t('Naučeno {k} od {n}', { k: kc, n: d.cards.length })) + '</span></div>';
   }).join('');
   // najteže: najviše zaboravljanja
   var hard = Object.keys(data.rev).filter(function (key) { return data.rev[key].l >= 2 && key.indexOf('c:') === 0 && itemOf(key); })
