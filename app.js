@@ -3,7 +3,7 @@
    Pri svakom objavljivanju: povećati APP_VERSION, isti broj upisati u version.json
    i u ?v= parametre u index.html. */
 
-var APP_VERSION = 35;
+var APP_VERSION = 36;
 
 /* ---------- pomoćne funkcije ---------- */
 function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
@@ -478,9 +478,9 @@ function knownCardsMenu(d, kc, unk) {
 function viewDeck() {
   var d = deck();
   var kc = knownCount(d), total = d.cards.length, unk = total - kc, p = pct(d);
-  // učenje: kartice se promešaju i prolaze redom, svaka jednom u krugu (bez ponavljanja po rasporedu)
+  // učenje: kartice (promešane ili po redu) prolaze se jednom u krugu, bez ponavljanja po rasporedu
   var study = total === 0 ? '' :
-    '<button class="btn primary big-btn" data-act="startAll"><span>' + t('Uči') + '</span><small>' + t('sve kartice ({n}), promešane', { n: total }) + '</small></button>' +
+    '<button class="btn primary big-btn" data-act="startAll"><span>' + t('Uči') + '</span><small>' + t(cardsInOrder() ? 'sve kartice ({n}), po redu' : 'sve kartice ({n}), promešane', { n: total }) + '</small></button>' +
     '<button class="btn" data-act="startUnknown"' + (unk ? '' : ' disabled') + '>' + t('Samo nenaučene ({n})', { n: unk }) + '</button>';
   return '<div class="screen deck-wide">' +
     '<div class="topbar">' + backBtn('home', t('Špilovi')) + '</div>' +
@@ -497,6 +497,7 @@ function viewDeck() {
           study +
         '</div>' +
         (total ? '<details class="free"><summary>' + t('Podešavanja učenja') + '</summary><div class="body">' +
+          '<div class="field"><span class="label">' + t('Redosled') + '</span>' + seg('cardOrder', [['rnd', t('Nasumično')], ['seq', t('Po redu')]], cardsInOrder() ? 'seq' : 'rnd') + '</div>' +
           '<div class="field"><span class="label">' + t('Smer') + '</span>' + seg('side', [['qa', t('Pitanje → odgovor')], ['aq', t('Odgovor → pitanje')]], data.reverse ? 'aq' : 'qa') + '</div>' +
           toggleRow('typeAnswer', t('Kucanje odgovora'), t('Prvo upišeš odgovor, pa ga uporediš sa tačnim.')) +
         '</div></details>' : '') +
@@ -504,7 +505,7 @@ function viewDeck() {
         '<div class="stack">' +
           '<button class="btn" data-act="edit">' + t('Izmeni kartice') + '</button>' +
           '<div style="display:flex;justify-content:center;flex-wrap:wrap;gap:4px 16px">' +
-            (kc > 0 || sc.fresh < keys.length ? '<button class="link" data-act="reset">' + t('Resetuj napredak') + '</button>' : '') +
+            (kc > 0 ? '<button class="link" data-act="reset">' + t('Resetuj napredak') + '</button>' : '') +
             '<button class="link danger" data-act="delDeck">' + t('Obriši špil') + '</button>' +
           '</div>' +
         '</div>' +
@@ -1166,7 +1167,9 @@ function startSession(keys, mode, scope) {
   render();
   autoSpeak();
 }
-// učenje izabranih kartica jednog špila: promešane, svaka jednom (Ne znam je ne vraća u isti krug)
+// redosled učenja kartica: podrazumevano promešano, ili po redu kao u špilu (Podešavanja učenja)
+function cardsInOrder() { return data.settings.cardOrder === 'seq'; }
+// učenje izabranih kartica jednog špila: svaka jednom (Ne znam je ne vraća u isti krug)
 function begin(ids) {
   var d = deck(), cards = ids.map(function (id) { return cardById(d, id); }).filter(Boolean);
   // učenje obrnuto ima smisla samo za kartice koje imaju odgovor (praznine se uče kao i uvek)
@@ -1176,7 +1179,7 @@ function begin(ids) {
   }
   if (!cards.length) return;
   var keys = deckKeys(d, cards);
-  startSession(shuffled(keys), 'free', d.id);
+  startSession(cardsInOrder() ? keys : shuffled(keys), 'free', d.id);
 }
 // ponavljanje po rasporedu: jedan špil ili svi ('all'); bonusNew su nove kartice preko dnevne granice
 function beginSrs(scope, bonusNew) {
@@ -2628,6 +2631,7 @@ var acts = {
   theme: function (v) { data.theme = v; save(); render(true); },
   order: function (v) { data.random = v === 'rnd'; save(); render(true); },
   knownTab: function (v) { ui.knownTab = v; render(true); },
+  cardOrder: function (v) { data.settings.cardOrder = v === 'seq' ? 'seq' : 'rnd'; save(); render(true); },
   knownToggle: function (id) {
     var d = deck(); if (!d || !cardById(d, id)) return;
     if (d.known[id]) delete d.known[id]; else d.known[id] = true;

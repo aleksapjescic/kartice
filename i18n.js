@@ -392,6 +392,7 @@ var EN = {
   'Slobodno učenje': 'Free study',
   'Uči': 'Study',
   'sve kartice ({n}), promešane': 'all cards ({n}), shuffled',
+  'sve kartice ({n}), po redu': 'all cards ({n}), in order',
   'Samo nenaučene ({n})': 'Only unlearned ({n})',
   'Podešavanja učenja': 'Study settings',
   'Prvo upišeš odgovor, pa ga uporediš sa tačnim.': 'Type your answer first, then compare it with the correct one.',
