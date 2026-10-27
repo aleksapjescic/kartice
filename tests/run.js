@@ -30,7 +30,7 @@ function makeContext() {
   vm.createContext(ctx);
   vm.runInContext(src('i18n.js') + src('data.js') + src('vendor/ts-fsrs.umd.js'), ctx);
   var app = src('app.js');
-  var helpers = ['uid', 'shuffled', 'esc', 'defaultDeck', 'normalize', 'cardById', 'optionList', 'questionIssue', 'playable', 'noteFileIds', 'cardImages', 'deckFileIds', 'allFileIds', 'nextNo', 'fold'];
+  var helpers = ['uid', 'shuffled', 'esc', 'defaultDeck', 'normalize', 'cardById', 'deck', 'createDeck', 'newDeckDialog', 'leftEmptyDeck', 'emptyDeckDialog', 'optionList', 'questionIssue', 'playable', 'noteFileIds', 'cardImages', 'deckFileIds', 'allFileIds', 'nextNo', 'fold'];
   vm.runInContext(helpers.map(function (n) { return fnFrom(app, n); }).join('\n') +
     '\nvar LETTERS = "ABCDEFGHIJ";\nfunction toast() {}\nfunction loadScript() { return Promise.resolve(); }\n', ctx);
   vm.runInContext(src('store.js') + src('srs.js') + src('markup.js') + src('stats.js') + src('sync.js'), ctx);
@@ -38,7 +38,7 @@ function makeContext() {
   vm.runInContext('var __backups = {}, __log = []; backupPut = function (id, r) { __backups[id] = r; return Promise.resolve(); };' +
     'logAdd = function (e) { __log.push(e); return Promise.resolve(); }; logDel = function (id) { __log = __log.filter(function (e) { return e.id !== id; }); return Promise.resolve(); };' +
     'idb = function () { return Promise.resolve(undefined); }; saveNow = function () { return Promise.resolve(); }; syncSaveMeta = function () { return Promise.resolve(); };' +
-    'function render() {} var ui = { screen: "home" }; function modal() {}', ctx);
+    'function render() {} function save() {} var ui = { screen: "home" }; function modal() {}', ctx);
   return ctx;
 }
 
@@ -249,6 +249,52 @@ async function test(name, fn) {
     cache = {}; net = wait(150, 'mreza'); check(await run('http://x/a.js') === 'mreza', 'spora mreža bez keša: čeka');
     cache = { './index.html': new Resp('index') }; net = wait(5, null, true); check(await run('http://x/s', 'navigate') === 'index', 'bez mreže: stranica');
     check(typeof handlers.push === 'function' && typeof handlers.notificationclick === 'function', 'podsetnik: push i klik');
+  });
+
+  /* ---------- novi špil ---------- */
+  await test('Novi špil: dijalog pravi špil samo sa nazivom', function () {
+    var c = makeContext();
+    vm.runInContext('data = normalize({ decks: [], schema: 2 });', c);
+    var last = null;
+    c.modal = function (o) { last = o; };
+    c.newDeckDialog();
+    check(last && last.input && last.input.placeholder === c.t('Naziv špila'), 'dijalog traži naziv');
+    check(c.data.decks.length === 0, 'ništa nije napravljeno pre potvrde');
+    var primary = function () { return last.buttons.find(function (b) { return b.kind === 'primary'; }); };
+    check(primary().onClick('   ') === false, 'prazan naziv ostavlja dijalog otvoren');
+    check(c.data.decks.length === 0, 'bez naziva nema špila');
+    primary().onClick('Hemija');
+    check(c.data.decks.length === 1 && c.data.decks[0].name === 'Hemija', 'špil napravljen sa unetim nazivom');
+    check(c.ui.deckId === c.data.decks[0].id && c.ui.screen === 'edit', 'otvara se uređivač novog špila');
+    check(c.data.decks[0].cards.length === 0, 'novi špil je prazan');
+  });
+  await test('Izlaz iz praznog špila: upozorenje', function () {
+    var c = makeContext();
+    vm.runInContext('data = normalize({ decks: [{ id: "d", name: "D", cards: [], known: {} }], schema: 2 }); ui.deckId = "d"; ui.screen = "edit";', c);
+    check(c.leftEmptyDeck('edit') === true, 'izlaz iz praznog špila upozorava');
+    vm.runInContext('ui.screen = "deck";', c);
+    check(c.leftEmptyDeck('deck') === false, 'kretanje po meniju ne upozorava');
+    vm.runInContext('data.decks[0].cards.push({ id: "k", q: "Q", a: "A" }); ui.screen = "edit";', c);
+    check(c.leftEmptyDeck('edit') === false, 'špil sa karticom ne upozorava');
+    vm.runInContext('ui.deckId = "nema"; ui.screen = "edit";', c);
+    check(c.leftEmptyDeck('edit') === false, 'nepostojeći špil ne upozorava');
+  });
+  await test('Izlaz iz praznog špila: dijalog sa izborom', function () {
+    var c = makeContext();
+    vm.runInContext('data = normalize({ decks: [{ id: "d", name: "D", cards: [], known: {} }], schema: 2 }); ui.deckId = "d"; ui.screen = "edit";', c);
+    var last = null, deleted = null;
+    c.modal = function (o) { last = o; };
+    c.deleteDeck = function (id) { deleted = id; };
+    c.emptyDeckDialog();
+    check(last && last.title === c.t('Špil je prazan'), 'dijalog upozorava da je špil prazan');
+    var byKind = function (k) { return last.buttons.find(function (b) { return b.kind === k; }); };
+    byKind('primary').onClick();
+    check(c.ui.screen === 'deck', 'Zadrži špil: prelazi na meni špila');
+    vm.runInContext('ui.screen = "edit";', c);
+    c.emptyDeckDialog();
+    byKind('danger').onClick();
+    check(deleted === 'd', 'Obriši špil: briše prazan špil');
+    check(c.ui.screen === 'edit', 'Otkaži: ostaje u uređivaču');
   });
 
   console.log((failed ? '✗ ' : '✓ ') + passed + ' provera prošlo' + (failed ? ', ' + failed + ' palo' : ''));

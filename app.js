@@ -102,6 +102,39 @@ var lastScreen = null, lastTick = -1;
 
 function deck() { return data.decks.find(function (d) { return d.id === ui.deckId; }) || null; }
 function cardById(d, id) { return d.cards.find(function (c) { return c.id === id; }); }
+
+function createDeck(name) {
+  var d = { id: uid(), name: name, tag: '', cards: [], known: {} };
+  data.decks.push(d); save();
+  ui.deckId = d.id; ui.screen = 'edit'; ui.cardQuery = ''; render();
+  return d;
+}
+function newDeckDialog() {
+  modal({
+    title: t('Novi špil'), input: { value: '', placeholder: t('Naziv špila') },
+    buttons: [{ label: t('Napravi špil'), kind: 'primary', onClick: function (v) {
+      v = (v || '').trim(); if (!v) return false;
+      createDeck(v);
+    } }, { label: t('Otkaži'), kind: 'cancel' }]
+  });
+}
+// vraća se iz uređivača u špil bez ijedne kartice
+function leftEmptyDeck(prev) {
+  var d = deck();
+  return prev === 'edit' && !!d && !d.cards.length;
+}
+function emptyDeckDialog() {
+  var d = deck();
+  modal({
+    title: t('Špil je prazan'),
+    text: t('Špil „{name}“ nema ni jednu karticu. Šta želiš da uradiš?', { name: d.name || t('Bez naziva') }),
+    buttons: [
+      { label: t('Zadrži špil'), kind: 'primary', onClick: function () { ui.screen = 'deck'; ui.flipped = false; render(); } },
+      { label: t('Obriši špil'), kind: 'danger', onClick: function () { deleteDeck(d.id); } },
+      { label: t('Nastavi sa karticama'), kind: 'cancel' }
+    ]
+  });
+}
 function knownCount(d) { return d.cards.filter(function (c) { return d.known[c.id]; }).length; }
 function unknownIds(d) { return d.cards.filter(function (c) { return !d.known[c.id]; }).map(function (c) { return c.id; }); }
 function pct(d) { return d.cards.length ? Math.round(knownCount(d) / d.cards.length * 100) : 0; }
@@ -2591,12 +2624,7 @@ var acts = {
   home: function () { ui.screen = 'home'; ui.manage = false; render(); },
   settings: function () { ui.screen = 'settings'; render(); },
   open: function (id) { ui.deckId = id; ui.screen = 'deck'; ui.manage = false; render(); },
-  newDeck: function () {
-    var d = { id: uid(), name: t('Novi špil'), tag: '', cards: [], known: {} };
-    data.decks.push(d); save();
-    ui.deckId = d.id; ui.screen = 'edit'; ui.cardQuery = ''; render();
-    var n = document.getElementById('deckName'); if (n) { n.focus(); n.select(); }
-  },
+  newDeck: function () { newDeckDialog(); },
   theme: function (v) { data.theme = v; save(); render(true); },
   order: function (v) { data.random = v === 'rnd'; save(); render(true); },
   knownTab: function (v) { ui.knownTab = v; render(true); },
@@ -2626,7 +2654,10 @@ var acts = {
         { label: t('Otkaži'), kind: 'cancel' }] });
   },
   edit: function () { ui.screen = 'edit'; ui.cardQuery = ''; render(); },
-  toDeck: function () { ui.screen = 'deck'; ui.flipped = false; render(); },
+  toDeck: function () {
+    if (leftEmptyDeck(ui.screen)) { emptyDeckDialog(); return; }
+    ui.screen = 'deck'; ui.flipped = false; render();
+  },
   flip: flip,
   prev: function () { go(ui.i - 1); },
   yes: function () { mark(true); },
